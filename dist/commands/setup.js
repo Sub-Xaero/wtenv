@@ -51,8 +51,10 @@ export async function setup() {
     mkdirSync(DNSMASQ_CONF_DIR, { recursive: true });
     if (existsSync(DNSMASQ_CONF)) {
         const content = readFileSync(DNSMASQ_CONF, "utf8");
-        if (!content.includes("conf-dir")) {
-            execSync(`echo "conf-dir=${DNSMASQ_CONF_DIR}" >> ${DNSMASQ_CONF}`);
+        // Check for an active (uncommented) conf-dir line pointing to our directory
+        const activeConfDir = content.split("\n").some((line) => !line.trimStart().startsWith("#") && line.includes("conf-dir") && line.includes(DNSMASQ_CONF_DIR));
+        if (!activeConfDir) {
+            execSync(`echo "conf-dir=${DNSMASQ_CONF_DIR}/,*.conf" >> ${DNSMASQ_CONF}`);
             console.log("  Added conf-dir to dnsmasq.conf");
         }
     }

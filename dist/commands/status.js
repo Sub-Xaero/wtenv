@@ -14,17 +14,22 @@ export async function status() {
     check("/etc/resolver/test exists", existsSync("/etc/resolver/test"));
     const caddyUp = await isCaddyRunning();
     check("Caddy running (admin :2019)", caddyUp);
-    // Quick DNS resolution test
-    try {
-        execSync("ping -c1 -W1 test-wsproxy-probe.test 2>&1", { stdio: "pipe" });
-        check("DNS resolves *.test → 127.0.0.1", true);
-    }
-    catch (err) {
-        const out = err instanceof Error ? err.message : String(err);
-        const resolved = out.includes("127.0.0.1");
-        check("DNS resolves *.test → 127.0.0.1", resolved);
-    }
+    // DNS resolution test using a registered worktree if available
     const worktrees = listWorktrees();
+    const probeWorktree = worktrees[0];
+    if (probeWorktree) {
+        const probeHost = `probe.${probeWorktree.name}.test`;
+        try {
+            const out = execSync(`dig +short @127.0.0.1 ${probeHost} 2>&1`, { encoding: "utf8", timeout: 3000 }).trim();
+            check("DNS resolves *.test → 127.0.0.1", out === "127.0.0.1", out || "no answer from dnsmasq");
+        }
+        catch {
+            check("DNS resolves *.test → 127.0.0.1", false, "dig failed — is dnsmasq on port 53?");
+        }
+    }
+    else {
+        check("DNS resolves *.test → 127.0.0.1", isDnsmasqRunning(), "no worktrees registered yet to probe");
+    }
     console.log(`\nRegistered worktrees: ${worktrees.length}`);
     if (worktrees.length > 0) {
         for (const wt of worktrees) {
