@@ -1,4 +1,4 @@
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { writeFileSync, unlinkSync, existsSync, mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
@@ -6,6 +6,7 @@ function confPath(worktreeName) {
     return join(DNSMASQ_CONF_DIR, `${worktreeName}.conf`);
 }
 export function registerDnsmasq(worktreeName, tld) {
+    mkdirSync(DNSMASQ_CONF_DIR, { recursive: true });
     const content = `address=/.${worktreeName}.${tld}/127.0.0.1\n`;
     writeFileSync(confPath(worktreeName), content);
     reloadDnsmasq();
