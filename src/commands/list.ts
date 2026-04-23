@@ -23,7 +23,7 @@ export function list(): void {
           serviceCfg.hostname === "*"
             ? `*.${wt.name}.${config.tld}`
             : `${serviceCfg.hostname}.${wt.name}.${config.tld}`;
-        console.log(`  ${service.padEnd(10)} :${port}   https://${hostname}`);
+        console.log(`  ${service.padEnd(10)} :${port}   http://${hostname}`);
       } else {
         console.log(`  ${service.padEnd(10)} :${port}`);
       }

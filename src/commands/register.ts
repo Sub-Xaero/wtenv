@@ -31,7 +31,7 @@ export async function register(
         cfg.hostname === "*"
           ? `*.${worktreeName}.${config.tld}`
           : `${cfg.hostname}.${worktreeName}.${config.tld}`;
-      console.log(`  ${service}: port ${nextPort}  →  https://${hostname}`);
+      console.log(`  ${service}: port ${nextPort}  →  http://${hostname}`);
       nextPort++;
     }
     return;
@@ -72,7 +72,7 @@ export async function register(
       cfg.hostname === "*"
         ? `*.${worktreeName}.${config.tld}`
         : `${cfg.hostname}.${worktreeName}.${config.tld}`;
-    console.log(`  ${service.padEnd(10)} ${cfg.envVar}=${port}   https://${hostname}`);
+    console.log(`  ${service.padEnd(10)} ${cfg.envVar}=${port}   http://${hostname}`);
   }
 
   console.log();

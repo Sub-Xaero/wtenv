@@ -1,24 +1,49 @@
-const CADDY_ADMIN = "http://localhost:2019";
+import * as http from "node:http";
+const CADDY_ADMIN_HOST = "localhost";
+const CADDY_ADMIN_PORT = 2019;
+function httpRequest(options, body) {
+    return new Promise((resolve, reject) => {
+        const req = http.request(options, (res) => {
+            let data = "";
+            res.on("data", (chunk) => { data += chunk.toString(); });
+            res.on("end", () => resolve({ status: res.statusCode ?? 0, data }));
+        });
+        req.on("error", reject);
+        if (body)
+            req.write(body);
+        req.end();
+    });
+}
 async function getConfig() {
     try {
-        const res = await fetch(`${CADDY_ADMIN}/config/`);
-        if (!res.ok)
+        const { status, data } = await httpRequest({
+            hostname: CADDY_ADMIN_HOST,
+            port: CADDY_ADMIN_PORT,
+            path: "/config/",
+            method: "GET",
+        });
+        if (status !== 200)
             return null;
-        return (await res.json());
+        return JSON.parse(data);
     }
     catch {
         return null;
     }
 }
 async function loadConfig(config) {
-    const res = await fetch(`${CADDY_ADMIN}/load`, {
+    const body = JSON.stringify(config);
+    const { status, data } = await httpRequest({
+        hostname: CADDY_ADMIN_HOST,
+        port: CADDY_ADMIN_PORT,
+        path: "/load",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
-    });
-    if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`Caddy load failed (${res.status}): ${body}`);
+        headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+        },
+    }, body);
+    if (status !== 200) {
+        throw new Error(`Caddy load failed (${status}): ${data}`);
     }
 }
 function buildRoutes(worktreeName, tld, ports, serviceHostnames) {
@@ -51,14 +76,13 @@ export async function registerCaddy(worktreeName, tld, ports, serviceHostnames) 
     const newRoutes = buildRoutes(worktreeName, tld, ports, serviceHostnames);
     const existing = await getConfig();
     const currentRoutes = existing?.apps?.http?.servers?.wsproxy?.routes ?? [];
-    // Remove any existing routes for this worktree (re-register idempotency)
     const filtered = currentRoutes.filter((r) => !r.match.some((m) => m.host?.some((h) => h.includes(`.${worktreeName}.`))));
     const config = {
         apps: {
             http: {
                 servers: {
                     wsproxy: {
-                        listen: [":443", ":80"],
+                        listen: [":80"],
                         routes: [...filtered, ...newRoutes],
                     },
                 },
@@ -90,8 +114,13 @@ export async function deregisterCaddy(worktreeName) {
 }
 export async function isCaddyRunning() {
     try {
-        const res = await fetch(`${CADDY_ADMIN}/config/`);
-        return res.ok;
+        const { status } = await httpRequest({
+            hostname: CADDY_ADMIN_HOST,
+            port: CADDY_ADMIN_PORT,
+            path: "/config/",
+            method: "GET",
+        });
+        return status === 200;
     }
     catch {
         return false;
