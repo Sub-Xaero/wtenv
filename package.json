@@ -1,0 +1,24 @@
+{
+  "name": "wsproxy",
+  "version": "0.1.0",
+  "description": "Worktree proxy and port registry — per-worktree DNS namespaces and port allocation for Conductor-managed git worktrees",
+  "type": "module",
+  "bin": {
+    "wsproxy": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "link": "npm run build && npm link"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
