@@ -28,7 +28,7 @@ export interface DatabaseConfig {
   envVar: string; // e.g. "DATABASE_URL"
 }
 
-export interface WsproxyConfig {
+export interface WtenvConfig {
   portRange: [number, number];
   tld: string;
   project?: ProjectConfig;
@@ -36,7 +36,7 @@ export interface WsproxyConfig {
   services: Record<string, ServiceConfig>;
 }
 
-const DEFAULTS: WsproxyConfig = {
+const DEFAULTS: WtenvConfig = {
   portRange: [3100, 4099],
   tld: "test",
   services: {
@@ -44,7 +44,7 @@ const DEFAULTS: WsproxyConfig = {
   },
 };
 
-export function loadConfig(cwd: string = process.cwd()): WsproxyConfig {
+export function loadConfig(cwd: string = process.cwd()): WtenvConfig {
   const configPath = join(cwd, ".wtenv.json");
   if (!existsSync(configPath)) return DEFAULTS;
 

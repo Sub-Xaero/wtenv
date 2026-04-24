@@ -21,11 +21,11 @@ export interface DatabaseConfig {
     password: string;
     envVar: string;
 }
-export interface WsproxyConfig {
+export interface WtenvConfig {
     portRange: [number, number];
     tld: string;
     project?: ProjectConfig;
     database?: DatabaseConfig;
     services: Record<string, ServiceConfig>;
 }
-export declare function loadConfig(cwd?: string): WsproxyConfig;
+export declare function loadConfig(cwd?: string): WtenvConfig;

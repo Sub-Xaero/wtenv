@@ -5,7 +5,7 @@ export async function projectRegister(opts = {}) {
     const configRoot = opts.configRoot ?? process.cwd();
     const config = loadConfig(configRoot);
     if (!config.project) {
-        console.error("No 'project' section found in .wsproxy.json");
+        console.error("No 'project' section found in .wtenv.json");
         process.exit(1);
     }
     const { name, baseDomain, domains } = config.project;
@@ -24,7 +24,7 @@ export async function projectDeregister(opts = {}) {
     const configRoot = opts.configRoot ?? process.cwd();
     const config = loadConfig(configRoot);
     if (!config.project) {
-        console.error("No 'project' section found in .wsproxy.json");
+        console.error("No 'project' section found in .wtenv.json");
         process.exit(1);
     }
     const { name, baseDomain, domains } = config.project;

@@ -10,8 +10,8 @@ import { projectRegister, projectDeregister } from "./commands/project.js";
 const program = new Command();
 
 program
-  .name("wsproxy")
-  .description("Worktree proxy and port registry for Conductor-managed git worktrees")
+  .name("wtenv")
+  .description("Worktree environment manager for Conductor-managed git worktrees")
   .version("0.1.0");
 
 program

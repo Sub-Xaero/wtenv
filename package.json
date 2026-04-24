@@ -1,10 +1,10 @@
 {
-  "name": "wsproxy",
+  "name": "wtenv",
   "version": "0.1.0",
-  "description": "Worktree proxy and port registry — per-worktree DNS namespaces and port allocation for Conductor-managed git worktrees",
+  "description": "Worktree environment manager — per-worktree DNS namespaces, port allocation, and database isolation for Conductor-managed git worktrees",
   "type": "module",
   "bin": {
-    "wsproxy": "./dist/index.js"
+    "wtenv": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",

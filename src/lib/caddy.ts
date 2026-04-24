@@ -13,7 +13,7 @@ interface CaddyConfig {
   apps?: {
     http?: {
       servers?: {
-        wsproxy?: {
+        wtenv?: {
           listen?: string[];
           routes?: CaddyRoute[];
         };
@@ -60,7 +60,7 @@ async function patchRoutes(
   filterFn: (route: CaddyRoute) => boolean
 ): Promise<void> {
   const existing = await getConfig();
-  const currentServer = existing?.apps?.http?.servers?.wsproxy;
+  const currentServer = existing?.apps?.http?.servers?.wtenv;
   const currentRoutes: CaddyRoute[] = currentServer?.routes ?? [];
   // Preserve the existing listener config; fall back to :443 + :80 if no server yet
   const listen = currentServer?.listen ?? [":443", ":80"];
@@ -70,7 +70,7 @@ async function patchRoutes(
     apps: {
       http: {
         servers: {
-          wsproxy: {
+          wtenv: {
             listen,
             routes: [...filtered, ...newRoutes],
           },
@@ -190,12 +190,12 @@ function isProjectRoute(host: string, _projectName: string, domains: ProjectDoma
 
 export async function setListener(ports: string[]): Promise<void> {
   const existing = await getConfig();
-  const currentRoutes: CaddyRoute[] = existing?.apps?.http?.servers?.wsproxy?.routes ?? [];
+  const currentRoutes: CaddyRoute[] = existing?.apps?.http?.servers?.wtenv?.routes ?? [];
   const body = JSON.stringify({
     apps: {
       http: {
         servers: {
-          wsproxy: {
+          wtenv: {
             listen: ports,
             routes: currentRoutes,
           },

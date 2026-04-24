@@ -24,7 +24,7 @@ export async function status() {
             check("DNS resolves *.test → 127.0.0.1", address === "127.0.0.1", address);
         }
         catch {
-            check("DNS resolves *.test → 127.0.0.1", false, "failed — run 'wsproxy setup' to configure pfctl redirect");
+            check("DNS resolves *.test → 127.0.0.1", false, "failed — run 'wtenv setup' to configure pfctl redirect");
         }
     }
     else {

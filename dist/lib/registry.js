@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-const DB_DIR = join(homedir(), ".wsproxy");
+const DB_DIR = join(homedir(), ".wtenv");
 const DB_PATH = join(DB_DIR, "registry.db");
 function openDb() {
     if (!existsSync(DB_DIR))
@@ -31,7 +31,7 @@ export function allocatePorts(worktreeName, projectRoot, services, portRange) {
         .prepare("SELECT name FROM worktrees WHERE name = ?")
         .get(worktreeName);
     if (existing) {
-        throw new Error(`Worktree '${worktreeName}' is already registered. Run 'wsproxy deregister ${worktreeName}' first.`);
+        throw new Error(`Worktree '${worktreeName}' is already registered. Run 'wtenv deregister ${worktreeName}' first.`);
     }
     const usedPorts = new Set(db.prepare("SELECT port FROM port_assignments").all().map((r) => r.port));
     const assignments = {};

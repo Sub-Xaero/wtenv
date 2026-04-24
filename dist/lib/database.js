@@ -27,7 +27,7 @@ export function provisionDatabase(worktreeName, config) {
         throw new Error(`createdb failed: ${stderr.trim()}`);
     }
     if (config.forkFrom) {
-        const dumpFile = join(tmpdir(), `wsproxy-${dbName}.dump`);
+        const dumpFile = join(tmpdir(), `wtenv-${dbName}.dump`);
         try {
             process.stdout.write(`  Forking '${config.forkFrom}' → '${dbName}'... `);
             execSync(`pg_dump -Fc -h ${config.host} -p ${config.port} -U ${config.username} ${config.forkFrom} > ${dumpFile}`, { env, stdio: "pipe" });

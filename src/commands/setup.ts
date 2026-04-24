@@ -40,7 +40,7 @@ function isDnsmasqServingPort53(): boolean {
 }
 
 export async function setup(): Promise<void> {
-  console.log("wsproxy one-time setup\n");
+  console.log("wtenv one-time setup\n");
 
   // --- dnsmasq ---
 
@@ -64,14 +64,16 @@ export async function setup(): Promise<void> {
       console.log("  Added conf-dir to dnsmasq.conf");
     }
 
-    // Run on non-privileged port 5353 so dnsmasq can run as a user service
-    // (no root needed — enables passwordless HUP reloads)
+    // Run on non-privileged port 5300 so dnsmasq can run as a user service.
+    // Port 5353 is owned by mDNSResponder on all interfaces — it will block dnsmasq.
     const hasPort = content.split("\n").some(
-      (line) => !line.trimStart().startsWith("#") && line.trim() === "port=5353"
+      (line) => !line.trimStart().startsWith("#") && line.trim() === "port=5300"
     );
     if (!hasPort) {
-      content += `\nport=5353\n`;
-      console.log("  Configured dnsmasq to listen on port 5353 (user-level service)");
+      // Migrate from old port=5353 if present
+      content = content.replace(/^\s*port=5353\s*$/m, "");
+      content += `\nport=5300\nlisten-address=127.0.0.1\nbind-interfaces\n`;
+      console.log("  Configured dnsmasq to listen on 127.0.0.1:5300");
     }
 
     writeFileSync(DNSMASQ_CONF, content);
@@ -113,10 +115,10 @@ export async function setup(): Promise<void> {
     console.log(`  ${RESOLVER_PATH} already configured`);
   }
 
-  // --- pfctl: forward loopback port 53 → 5353 so dnsmasq runs without root ---
+  // --- pfctl: forward loopback port 53 → 5300 so dnsmasq runs without root ---
 
   const PF_ANCHOR_PATH = "/etc/pf.anchors/dev.dnsmasq";
-  const pfRule = "rdr pass on lo0 proto udp from any to 127.0.0.1 port 53 -> 127.0.0.1 port 5353\n";
+  const pfRule = "rdr pass on lo0 proto udp from any to 127.0.0.1 port 53 -> 127.0.0.1 port 5300\n";
   const existingPfRule = existsSync(PF_ANCHOR_PATH) ? readFileSync(PF_ANCHOR_PATH, "utf8") : "";
   if (existingPfRule.trim() !== pfRule.trim()) {
     console.log("  Setting up pfctl DNS redirect (requires sudo)...");
@@ -176,7 +178,7 @@ export async function setup(): Promise<void> {
     }
   } else if (port443InUse) {
     console.log("\nNote: port 443 is in use (LocalCan?). Caddy stays on :80.");
-    console.log("      Quit LocalCan and re-run 'wsproxy setup' to enable HTTPS.");
+    console.log("      Quit LocalCan and re-run 'wtenv setup' to enable HTTPS.");
   }
 
   console.log("\nSetup complete.");

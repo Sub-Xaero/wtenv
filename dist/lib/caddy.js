@@ -32,7 +32,7 @@ async function getConfig() {
 }
 async function patchRoutes(newRoutes, filterFn) {
     const existing = await getConfig();
-    const currentServer = existing?.apps?.http?.servers?.wsproxy;
+    const currentServer = existing?.apps?.http?.servers?.wtenv;
     const currentRoutes = currentServer?.routes ?? [];
     // Preserve the existing listener config; fall back to :443 + :80 if no server yet
     const listen = currentServer?.listen ?? [":443", ":80"];
@@ -41,7 +41,7 @@ async function patchRoutes(newRoutes, filterFn) {
         apps: {
             http: {
                 servers: {
-                    wsproxy: {
+                    wtenv: {
                         listen,
                         routes: [...filtered, ...newRoutes],
                     },
@@ -120,12 +120,12 @@ function isProjectRoute(host, _projectName, domains) {
 }
 export async function setListener(ports) {
     const existing = await getConfig();
-    const currentRoutes = existing?.apps?.http?.servers?.wsproxy?.routes ?? [];
+    const currentRoutes = existing?.apps?.http?.servers?.wtenv?.routes ?? [];
     const body = JSON.stringify({
         apps: {
             http: {
                 servers: {
-                    wsproxy: {
+                    wtenv: {
                         listen: ports,
                         routes: currentRoutes,
                     },
