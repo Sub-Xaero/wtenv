@@ -8,7 +8,7 @@ import { provisionDatabase } from "../lib/database.js";
 
 interface RegisterOptions {
   cwd?: string;
-  configRoot?: string; // where .wsproxy.json lives (defaults to cwd)
+  configRoot?: string; // where .wtenv.json lives (defaults to cwd)
   envFile?: string;
   dryRun?: boolean;
 }
