@@ -4,6 +4,7 @@ import { loadConfig } from "../lib/config.js";
 import { allocatePorts } from "../lib/registry.js";
 import { registerDnsmasq } from "../lib/dnsmasq.js";
 import { registerCaddy } from "../lib/caddy.js";
+import { provisionDatabase } from "../lib/database.js";
 export async function register(worktreeName, opts = {}) {
     const cwd = opts.cwd ?? process.cwd();
     const configRoot = opts.configRoot ?? cwd;
@@ -18,7 +19,7 @@ export async function register(worktreeName, opts = {}) {
             const hostname = cfg.hostname === "*"
                 ? `*.${worktreeName}.${config.tld}`
                 : `${cfg.hostname}.${worktreeName}.${config.tld}`;
-            console.log(`  ${service}: port ${nextPort}  →  http://${hostname}`);
+            console.log(`  ${service}: port ${nextPort}  →  https://${hostname}`);
             nextPort++;
         }
         return;
@@ -30,11 +31,22 @@ export async function register(worktreeName, opts = {}) {
     // Configure Caddy
     const serviceHostnames = Object.fromEntries(Object.entries(config.services).map(([name, cfg]) => [name, cfg.hostname]));
     await registerCaddy(worktreeName, config.tld, ports, serviceHostnames);
-    // Write env file
+    // Provision database if configured
     const envLines = Object.entries(config.services).map(([service, cfg]) => {
         const port = ports[service];
-        return `${cfg.envVar}=${port}`;
-    });
+        const lines = [`${cfg.envVar}=${port}`];
+        if (cfg.hmrHostEnvVar && cfg.hostname !== "*") {
+            lines.push(`${cfg.hmrHostEnvVar}=${cfg.hostname}.${worktreeName}.${config.tld}`);
+        }
+        if (cfg.domainEnvVar) {
+            lines.push(`${cfg.domainEnvVar}=${worktreeName}.${config.tld}`);
+        }
+        return lines;
+    }).flat();
+    if (config.database) {
+        const dbUrl = provisionDatabase(worktreeName, config.database);
+        envLines.push(`${config.database.envVar}=${dbUrl}`);
+    }
     const envFilePath = join(cwd, opts.envFile ?? ".env.worktree");
     writeFileSync(envFilePath, envLines.join("\n") + "\n");
     console.log(`Registered worktree '${worktreeName}'`);
@@ -44,7 +56,7 @@ export async function register(worktreeName, opts = {}) {
         const hostname = cfg.hostname === "*"
             ? `*.${worktreeName}.${config.tld}`
             : `${cfg.hostname}.${worktreeName}.${config.tld}`;
-        console.log(`  ${service.padEnd(10)} ${cfg.envVar}=${port}   http://${hostname}`);
+        console.log(`  ${service.padEnd(10)} ${cfg.envVar}=${port}   https://${hostname}`);
     }
     console.log();
     console.log(`Env vars written to ${envFilePath}`);

@@ -15,6 +15,8 @@ export function loadConfig(cwd = process.cwd()) {
     return {
         portRange: raw.portRange ?? DEFAULTS.portRange,
         tld: raw.tld ?? DEFAULTS.tld,
+        project: raw.project,
+        database: raw.database,
         services: raw.services ?? DEFAULTS.services,
     };
 }

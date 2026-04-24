@@ -5,6 +5,7 @@ import { register } from "./commands/register.js";
 import { deregister } from "./commands/deregister.js";
 import { list } from "./commands/list.js";
 import { status } from "./commands/status.js";
+import { projectRegister, projectDeregister } from "./commands/project.js";
 
 const program = new Command();
 
@@ -49,11 +50,12 @@ program
 program
   .command("deregister <name>")
   .description("Remove DNS config, Caddy routes, and release port allocations")
-  .option("--cwd <path>", "Project root (to locate .env.worktree)", process.cwd())
+  .option("--cwd <path>", "Worktree directory (to locate .env.worktree)", process.cwd())
+  .option("--config-root <path>", "Directory containing .wsproxy.json (default: --cwd)")
   .option("--env-file <filename>", "Env file name to remove", ".env.worktree")
-  .action(async (name: string, opts: { cwd: string; envFile: string }) => {
+  .action(async (name: string, opts: { cwd: string; configRoot?: string; envFile: string }) => {
     try {
-      await deregister(name, { cwd: opts.cwd, envFile: opts.envFile });
+      await deregister(name, { cwd: opts.cwd, configRoot: opts.configRoot, envFile: opts.envFile });
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);
@@ -78,6 +80,36 @@ program
   .action(async () => {
     try {
       await status();
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+const projectCmd = program
+  .command("project")
+  .description("Manage static project domain registrations (non-worktree)");
+
+projectCmd
+  .command("register")
+  .description("Register project domains from .wsproxy.json project section")
+  .option("--config-root <path>", "Directory containing .wsproxy.json (default: cwd)")
+  .action(async (opts: { configRoot?: string }) => {
+    try {
+      await projectRegister({ configRoot: opts.configRoot ?? process.cwd() });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+projectCmd
+  .command("deregister")
+  .description("Remove project domain registrations")
+  .option("--config-root <path>", "Directory containing .wsproxy.json (default: cwd)")
+  .action(async (opts: { configRoot?: string }) => {
+    try {
+      await projectDeregister({ configRoot: opts.configRoot ?? process.cwd() });
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);

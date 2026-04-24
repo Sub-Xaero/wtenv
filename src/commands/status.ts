@@ -1,5 +1,5 @@
-import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import dns from "node:dns/promises";
 import { isDnsmasqRunning } from "../lib/dnsmasq.js";
 import { isCaddyRunning } from "../lib/caddy.js";
 import { listWorktrees } from "../lib/registry.js";
@@ -25,10 +25,10 @@ export async function status(): Promise<void> {
   if (probeWorktree) {
     const probeHost = `probe.${probeWorktree.name}.test`;
     try {
-      const out = execSync(`dig +short @127.0.0.1 ${probeHost} 2>&1`, { encoding: "utf8", timeout: 3000 }).trim();
-      check("DNS resolves *.test → 127.0.0.1", out === "127.0.0.1", out || "no answer from dnsmasq");
+      const { address } = await dns.lookup(probeHost);
+      check("DNS resolves *.test → 127.0.0.1", address === "127.0.0.1", address);
     } catch {
-      check("DNS resolves *.test → 127.0.0.1", false, "dig failed — is dnsmasq on port 53?");
+      check("DNS resolves *.test → 127.0.0.1", false, "failed — run 'wsproxy setup' to configure pfctl redirect");
     }
   } else {
     check("DNS resolves *.test → 127.0.0.1", isDnsmasqRunning(), "no worktrees registered yet to probe");

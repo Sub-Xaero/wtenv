@@ -1,6 +1,6 @@
 import { execSync, spawnSync } from "node:child_process";
 import { writeFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { isCaddyRunning } from "../lib/caddy.js";
+import { isCaddyRunning, setListener } from "../lib/caddy.js";
 const RESOLVER_PATH = "/etc/resolver/test";
 const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
 const DNSMASQ_CONF = "/opt/homebrew/etc/dnsmasq.conf";
@@ -50,40 +50,64 @@ export async function setup() {
     // Ensure dnsmasq.d dir exists and is included in config
     mkdirSync(DNSMASQ_CONF_DIR, { recursive: true });
     if (existsSync(DNSMASQ_CONF)) {
-        const content = readFileSync(DNSMASQ_CONF, "utf8");
-        // Check for an active (uncommented) conf-dir line pointing to our directory
+        let content = readFileSync(DNSMASQ_CONF, "utf8");
         const activeConfDir = content.split("\n").some((line) => !line.trimStart().startsWith("#") && line.includes("conf-dir") && line.includes(DNSMASQ_CONF_DIR));
         if (!activeConfDir) {
-            execSync(`echo "conf-dir=${DNSMASQ_CONF_DIR}/,*.conf" >> ${DNSMASQ_CONF}`);
+            content += `\nconf-dir=${DNSMASQ_CONF_DIR}/,*.conf\n`;
             console.log("  Added conf-dir to dnsmasq.conf");
         }
+        // Run on non-privileged port 5353 so dnsmasq can run as a user service
+        // (no root needed — enables passwordless HUP reloads)
+        const hasPort = content.split("\n").some((line) => !line.trimStart().startsWith("#") && line.trim() === "port=5353");
+        if (!hasPort) {
+            content += `\nport=5353\n`;
+            console.log("  Configured dnsmasq to listen on port 5353 (user-level service)");
+        }
+        writeFileSync(DNSMASQ_CONF, content);
     }
-    if (isDnsmasqServingPort53()) {
-        console.log("  dnsmasq already serving port 53");
+    // Stop root-level service if running, then start as user service
+    const dnsmasqAsRoot = spawnSync("sudo", ["brew", "services", "list"], { stdio: "pipe" })
+        .stdout.toString().includes("dnsmasq") ?? false;
+    if (dnsmasqAsRoot) {
+        console.log("  Stopping root dnsmasq service (requires sudo)...");
+        spawnSync("sudo", ["brew", "services", "stop", "dnsmasq"], { stdio: "inherit", timeout: 10_000 });
+    }
+    const dnsmasqUserRunning = spawnSync("brew", ["services", "list"], { stdio: "pipe" })
+        .stdout.toString().match(/dnsmasq\s+started/) !== null;
+    if (dnsmasqUserRunning) {
+        console.log("  dnsmasq already running as user service");
     }
     else {
-        // dnsmasq needs root to bind port 53 — must use sudo brew services
-        // First stop/remove any broken user-level LaunchAgent
-        execSync("brew services stop dnsmasq 2>/dev/null || true", { stdio: "pipe" });
-        console.log("  Starting dnsmasq as system service (requires sudo)...");
-        const result = spawnSync("sudo", ["brew", "services", "start", "dnsmasq"], { stdio: "inherit", timeout: 15_000 });
-        if (result.status === 0) {
-            console.log("  done");
-        }
-        else {
-            console.log("  failed — run manually: sudo brew services start dnsmasq");
-        }
+        run("brew services start dnsmasq", "Starting dnsmasq as user service");
     }
     // --- /etc/resolver/test ---
-    if (!existsSync(RESOLVER_PATH)) {
-        console.log("  Creating /etc/resolver/test (requires sudo)...");
-        const result = spawnSync("sudo", ["bash", "-c", `mkdir -p /etc/resolver && echo "nameserver 127.0.0.1" > ${RESOLVER_PATH}`], { stdio: "inherit" });
+    const resolverContent = "nameserver 127.0.0.1\n";
+    const existingResolver = existsSync(RESOLVER_PATH) ? readFileSync(RESOLVER_PATH, "utf8") : "";
+    if (existingResolver.trim() !== resolverContent.trim()) {
+        console.log("  Writing /etc/resolver/test (requires sudo)...");
+        const result = spawnSync("sudo", ["bash", "-c", `mkdir -p /etc/resolver && printf '${resolverContent}' > ${RESOLVER_PATH}`], { stdio: "inherit" });
         if (result.status !== 0) {
-            console.log(`  failed — run manually:\n    sudo bash -c 'mkdir -p /etc/resolver && echo "nameserver 127.0.0.1" > ${RESOLVER_PATH}'`);
+            console.log(`  failed — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\n' > ${RESOLVER_PATH}"`);
         }
     }
     else {
-        console.log(`  ${RESOLVER_PATH} already exists`);
+        console.log(`  ${RESOLVER_PATH} already configured`);
+    }
+    // --- pfctl: forward loopback port 53 → 5353 so dnsmasq runs without root ---
+    const PF_ANCHOR_PATH = "/etc/pf.anchors/dev.dnsmasq";
+    const pfRule = "rdr pass on lo0 proto udp from any to 127.0.0.1 port 53 -> 127.0.0.1 port 5353\n";
+    const existingPfRule = existsSync(PF_ANCHOR_PATH) ? readFileSync(PF_ANCHOR_PATH, "utf8") : "";
+    if (existingPfRule.trim() !== pfRule.trim()) {
+        console.log("  Setting up pfctl DNS redirect (requires sudo)...");
+        const pfResult = spawnSync("sudo", ["bash", "-c", `printf '${pfRule}' > ${PF_ANCHOR_PATH} && pfctl -ef ${PF_ANCHOR_PATH} 2>/dev/null; true`], { stdio: "inherit" });
+        if (pfResult.status !== 0) {
+            console.log(`  failed — run manually:\n    sudo bash -c "printf '${pfRule.trim()}\\n' > ${PF_ANCHOR_PATH} && pfctl -ef ${PF_ANCHOR_PATH}"`);
+        }
+    }
+    else {
+        // Reload in case pf rules were lost after reboot
+        spawnSync("sudo", ["pfctl", "-ef", PF_ANCHOR_PATH], { stdio: "ignore" });
+        console.log("  pfctl DNS redirect already configured");
     }
     // --- Caddy ---
     const caddyInstalled = spawnSync("which", ["caddy"], { stdio: "pipe" }).status === 0;
@@ -113,6 +137,21 @@ export async function setup() {
         }
     }
     run("caddy trust", "Trusting Caddy local CA (may prompt for password)", 30_000);
+    // Switch Caddy to HTTPS if port 443 is free (i.e. LocalCan has been quit)
+    const port443InUse = spawnSync("lsof", ["-i", "TCP:443", "-sTCP:LISTEN"], { stdio: "pipe" }).stdout.toString().trim().length > 0;
+    if (!port443InUse && await isCaddyRunning()) {
+        try {
+            await setListener([":443", ":80"]);
+            console.log("  Caddy switched to HTTPS (:443 + :80)");
+        }
+        catch {
+            console.log("  Could not switch Caddy to :443 (try again after quitting LocalCan)");
+        }
+    }
+    else if (port443InUse) {
+        console.log("\nNote: port 443 is in use (LocalCan?). Caddy stays on :80.");
+        console.log("      Quit LocalCan and re-run 'wsproxy setup' to enable HTTPS.");
+    }
     console.log("\nSetup complete.");
     console.log("Verify DNS: ping -c1 anything.test  — should resolve to 127.0.0.1");
 }

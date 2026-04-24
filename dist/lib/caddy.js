@@ -30,28 +30,46 @@ async function getConfig() {
         return null;
     }
 }
-async function loadConfig(config) {
-    const body = JSON.stringify(config);
+async function patchRoutes(newRoutes, filterFn) {
+    const existing = await getConfig();
+    const currentServer = existing?.apps?.http?.servers?.wsproxy;
+    const currentRoutes = currentServer?.routes ?? [];
+    // Preserve the existing listener config; fall back to :443 + :80 if no server yet
+    const listen = currentServer?.listen ?? [":443", ":80"];
+    const filtered = currentRoutes.filter(filterFn);
+    const body = JSON.stringify({
+        apps: {
+            http: {
+                servers: {
+                    wsproxy: {
+                        listen,
+                        routes: [...filtered, ...newRoutes],
+                    },
+                },
+            },
+            tls: {
+                automation: {
+                    // Use Caddy's internal CA for all local dev domains — no ACME needed
+                    policies: [{ issuers: [{ module: "internal" }] }],
+                },
+            },
+        },
+    });
     const { status, data } = await httpRequest({
         hostname: CADDY_ADMIN_HOST,
         port: CADDY_ADMIN_PORT,
         path: "/load",
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(body),
-        },
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
     }, body);
-    if (status !== 200) {
+    if (status !== 200)
         throw new Error(`Caddy load failed (${status}): ${data}`);
-    }
 }
-function buildRoutes(worktreeName, tld, ports, serviceHostnames) {
+function buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames) {
     const routes = [];
     const wildcardPort = Object.entries(serviceHostnames)
-        .filter(([, hostname]) => hostname === "*")
-        .map(([service]) => ports[service])[0];
-    // Specific-hostname routes first (higher priority in Caddy)
+        .filter(([, h]) => h === "*")
+        .map(([svc]) => ports[svc])[0];
     for (const [service, hostname] of Object.entries(serviceHostnames)) {
         if (hostname === "*")
             continue;
@@ -63,7 +81,6 @@ function buildRoutes(worktreeName, tld, ports, serviceHostnames) {
             handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `localhost:${port}` }] }],
         });
     }
-    // Wildcard route last
     if (wildcardPort !== undefined) {
         routes.push({
             match: [{ host: [`*.${worktreeName}.${tld}`] }],
@@ -72,45 +89,64 @@ function buildRoutes(worktreeName, tld, ports, serviceHostnames) {
     }
     return routes;
 }
+function buildProjectRoutes(domains) {
+    // Sort: specific hostnames (no wildcard) first, wildcards last
+    const sorted = [...domains].sort((a, b) => {
+        const aWild = a.hostname.startsWith("*") ? 1 : 0;
+        const bWild = b.hostname.startsWith("*") ? 1 : 0;
+        return aWild - bWild;
+    });
+    return sorted.map((d) => ({
+        match: [{ host: [d.hostname] }],
+        handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `localhost:${d.port}` }] }],
+    }));
+}
 export async function registerCaddy(worktreeName, tld, ports, serviceHostnames) {
-    const newRoutes = buildRoutes(worktreeName, tld, ports, serviceHostnames);
-    const existing = await getConfig();
-    const currentRoutes = existing?.apps?.http?.servers?.wsproxy?.routes ?? [];
-    const filtered = currentRoutes.filter((r) => !r.match.some((m) => m.host?.some((h) => h.includes(`.${worktreeName}.`))));
-    const config = {
-        apps: {
-            http: {
-                servers: {
-                    wsproxy: {
-                        listen: [":80"],
-                        routes: [...filtered, ...newRoutes],
-                    },
-                },
-            },
-        },
-    };
-    await loadConfig(config);
+    const newRoutes = buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames);
+    await patchRoutes(newRoutes, (r) => !r.match.some((m) => m.host?.some((h) => h.includes(`.${worktreeName}.`))));
 }
 export async function deregisterCaddy(worktreeName) {
+    await patchRoutes([], (r) => !r.match.some((m) => m.host?.some((h) => h.includes(`.${worktreeName}.`))));
+}
+export async function registerProjectCaddy(projectName, domains) {
+    const newRoutes = buildProjectRoutes(domains);
+    await patchRoutes(newRoutes, (r) => !r.match.some((m) => m.host?.some((h) => isProjectRoute(h, projectName, domains))));
+}
+export async function deregisterProjectCaddy(projectName, domains) {
+    await patchRoutes([], (r) => !r.match.some((m) => m.host?.some((h) => isProjectRoute(h, projectName, domains))));
+}
+function isProjectRoute(host, _projectName, domains) {
+    return domains.some((d) => d.hostname === host);
+}
+export async function setListener(ports) {
     const existing = await getConfig();
-    if (!existing)
-        return;
     const currentRoutes = existing?.apps?.http?.servers?.wsproxy?.routes ?? [];
-    const filtered = currentRoutes.filter((r) => !r.match.some((m) => m.host?.some((h) => h.includes(`.${worktreeName}.`))));
-    const config = {
-        ...existing,
+    const body = JSON.stringify({
         apps: {
             http: {
                 servers: {
                     wsproxy: {
-                        ...existing?.apps?.http?.servers?.wsproxy,
-                        routes: filtered,
+                        listen: ports,
+                        routes: currentRoutes,
                     },
                 },
             },
+            tls: {
+                automation: {
+                    policies: [{ issuers: [{ module: "internal" }] }],
+                },
+            },
         },
-    };
-    await loadConfig(config);
+    });
+    const { status, data } = await httpRequest({
+        hostname: CADDY_ADMIN_HOST,
+        port: CADDY_ADMIN_PORT,
+        path: "/load",
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+    }, body);
+    if (status !== 200)
+        throw new Error(`Caddy load failed (${status}): ${data}`);
 }
 export async function isCaddyRunning() {
     try {
