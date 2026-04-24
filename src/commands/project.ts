@@ -11,7 +11,7 @@ export async function projectRegister(opts: ProjectOptions = {}): Promise<void> 
   const config = loadConfig(configRoot);
 
   if (!config.project) {
-    console.error("No 'project' section found in .wsproxy.json");
+    console.error("No 'project' section found in .wtenv.json");
     process.exit(1);
   }
 
@@ -38,7 +38,7 @@ export async function projectDeregister(opts: ProjectOptions = {}): Promise<void
   const config = loadConfig(configRoot);
 
   if (!config.project) {
-    console.error("No 'project' section found in .wsproxy.json");
+    console.error("No 'project' section found in .wtenv.json");
     process.exit(1);
   }
 

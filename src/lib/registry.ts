@@ -3,7 +3,7 @@ import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const DB_DIR = join(homedir(), ".wsproxy");
+const DB_DIR = join(homedir(), ".wtenv");
 const DB_PATH = join(DB_DIR, "registry.db");
 
 export interface Worktree {
@@ -51,7 +51,7 @@ export function allocatePorts(
     .prepare("SELECT name FROM worktrees WHERE name = ?")
     .get(worktreeName);
   if (existing) {
-    throw new Error(`Worktree '${worktreeName}' is already registered. Run 'wsproxy deregister ${worktreeName}' first.`);
+    throw new Error(`Worktree '${worktreeName}' is already registered. Run 'wtenv deregister ${worktreeName}' first.`);
   }
 
   const usedPorts = new Set<number>(

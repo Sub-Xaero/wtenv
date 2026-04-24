@@ -45,7 +45,7 @@ const DEFAULTS: WsproxyConfig = {
 };
 
 export function loadConfig(cwd: string = process.cwd()): WsproxyConfig {
-  const configPath = join(cwd, ".wsproxy.json");
+  const configPath = join(cwd, ".wtenv.json");
   if (!existsSync(configPath)) return DEFAULTS;
 
   const raw = JSON.parse(readFileSync(configPath, "utf8"));
