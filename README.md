@@ -39,7 +39,7 @@ This installs and configures dnsmasq, sets up `/etc/resolver/test` for macOS DNS
 
 ## Configuration
 
-Add a `.wtenv.json` file to your project root:
+Add a `.wsproxy.json` file to your project root:
 
 ```json
 {
@@ -101,4 +101,4 @@ wtenv project deregister [--config-root <path>]
 
 ## How it works
 
-Port assignments and worktree metadata are stored in a SQLite registry at `~/.wtenv/registry.db`. On `register`, wtenv picks unused ports from the configured range, writes dnsmasq conf files to `/opt/homebrew/etc/dnsmasq.d/` for DNS routing, pushes reverse proxy routes to Caddy via its admin API (`localhost:2019`), optionally creates a PostgreSQL database using `createdb`, then writes all allocated values to `.env.worktree`. `deregister` reverses every step.
+Port assignments and worktree metadata are stored in a SQLite registry at `~/.wsproxy/registry.db`. On `register`, wtenv picks unused ports from the configured range, writes dnsmasq conf files to `/opt/homebrew/etc/dnsmasq.d/` for DNS routing, pushes reverse proxy routes to Caddy via its admin API (`localhost:2019`), optionally creates a PostgreSQL database using `createdb`, then writes all allocated values to `.env.worktree`. `deregister` reverses every step.
