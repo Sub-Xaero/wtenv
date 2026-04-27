@@ -2,16 +2,9 @@ import { spawnSync, execSync } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { DatabaseConfig } from "./config.js";
 
-export interface DatabaseConfig {
-  namePattern: string; // e.g. "campfront_development_{worktree}"
-  host: string;
-  port: number;
-  username: string;
-  password: string;
-  envVar: string; // e.g. "DATABASE_URL"
-  forkFrom?: string; // if set, copy data from this database instead of starting empty
-}
+export type { DatabaseConfig };
 
 function sanitizeName(worktreeName: string): string {
   return worktreeName.replace(/-/g, "_");

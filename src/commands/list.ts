@@ -1,7 +1,8 @@
 import { listWorktrees } from "../lib/registry.js";
 import { loadConfig } from "../lib/config.js";
+import { gitRoot } from "../lib/git.js";
 
-export function list(): void {
+export async function list(): Promise<void> {
   const worktrees = listWorktrees();
 
   if (worktrees.length === 0) {
@@ -9,7 +10,8 @@ export function list(): void {
     return;
   }
 
-  const config = loadConfig();
+  const configRoot = gitRoot() ?? process.cwd();
+  const config = await loadConfig(configRoot);
 
   for (const wt of worktrees) {
     const age = formatAge(wt.created_at);

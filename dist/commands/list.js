@@ -1,12 +1,14 @@
 import { listWorktrees } from "../lib/registry.js";
 import { loadConfig } from "../lib/config.js";
-export function list() {
+import { gitRoot } from "../lib/git.js";
+export async function list() {
     const worktrees = listWorktrees();
     if (worktrees.length === 0) {
         console.log("No worktrees registered.");
         return;
     }
-    const config = loadConfig();
+    const configRoot = gitRoot() ?? process.cwd();
+    const config = await loadConfig(configRoot);
     for (const wt of worktrees) {
         const age = formatAge(wt.created_at);
         console.log(`\n${wt.name}  (${age})`);

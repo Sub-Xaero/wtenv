@@ -1,60 +1,111 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { defaultPlugins, postgres } from "./plugins.js";
 
 export interface ServiceConfig {
-  envVar: string;
-  hostname: string; // "*" for wildcard, or a specific subdomain like "assets"
-  hmrHostEnvVar?: string; // if set, writes the full hostname (e.g. assets.dar-es-salaam.test) to this env var
-  domainEnvVar?: string; // if set, writes the base domain (e.g. dar-es-salaam.test) to this env var
+  hostname: string;
+  env?: Record<string, string>;
 }
 
 export interface ProjectDomain {
-  hostname: string; // "*.campfront.local", "assets.campfront.local", "campfront.local"
+  hostname: string;
   port: number;
 }
 
 export interface ProjectConfig {
-  name: string;       // used as the dnsmasq conf file name and registry key
-  baseDomain: string; // e.g. "campfront.local" — used for /etc/resolver/<baseDomain>
+  name: string;
+  baseDomain: string;
   domains: ProjectDomain[];
 }
 
 export interface DatabaseConfig {
-  namePattern: string; // e.g. "campfront_development_{worktree}"
+  namePattern: string;
   host: string;
   port: number;
   username: string;
   password: string;
-  envVar: string; // e.g. "DATABASE_URL"
+  envVar: string;
+  forkFrom?: string;
+}
+
+export interface Plugin {
+  name: string;
+  onRegister?(ctx: PluginContext): Promise<void> | void;
+  onDeregister?(ctx: PluginContext): Promise<void> | void;
+}
+
+export interface PluginContext {
+  worktreeName: string;
+  cwd: string;
+  configRoot: string;
+  ports: Record<string, number>;
+  envVars: Record<string, string>;
+  config: Readonly<Omit<WtenvConfig, "plugins">>;
 }
 
 export interface WtenvConfig {
-  portRange: [number, number];
   tld: string;
   project?: ProjectConfig;
   database?: DatabaseConfig;
   services: Record<string, ServiceConfig>;
+  plugins: Plugin[];
 }
 
-const DEFAULTS: WtenvConfig = {
-  portRange: [3100, 4099],
+const DEFAULTS = {
   tld: "test",
   services: {
-    web: { envVar: "PORT", hostname: "*" },
+    web: { hostname: "*", env: { PORT: "{port}" } },
   },
 };
 
-export function loadConfig(cwd: string = process.cwd()): WtenvConfig {
-  const configPath = join(cwd, ".wtenv.json");
-  if (!existsSync(configPath)) return DEFAULTS;
+export function defineConfig(
+  config: Omit<WtenvConfig, "plugins"> & { plugins?: Plugin[] }
+): WtenvConfig {
+  return { ...config, plugins: config.plugins ?? [] };
+}
 
-  const raw = JSON.parse(readFileSync(configPath, "utf8"));
+export async function loadConfig(configRoot: string = process.cwd()): Promise<WtenvConfig> {
+  // Try .wtenv.config.js first (Vite-style JS config)
+  const jsConfigPath = join(configRoot, ".wtenv.config.js");
+  if (existsSync(jsConfigPath)) {
+    const mod = await import(pathToFileURL(jsConfigPath).href);
+    const raw: WtenvConfig = mod.default ?? mod;
+    return normalizeConfig(raw, false);
+  }
+
+  // Fall back to .wtenv.json
+  const jsonConfigPath = join(configRoot, ".wtenv.json");
+  if (existsSync(jsonConfigPath)) {
+    const raw = JSON.parse(readFileSync(jsonConfigPath, "utf8"));
+    return normalizeConfig(raw, true);
+  }
+
+  return normalizeConfig({}, true);
+}
+
+// fromJson=true: auto-inject defaultPlugins + convert legacy database field
+// fromJson=false: JS config controls its own plugin list entirely
+function normalizeConfig(
+  raw: Partial<WtenvConfig> & { portRange?: [number, number]; database?: DatabaseConfig },
+  fromJson: boolean
+): WtenvConfig {
+  let plugins: Plugin[];
+
+  if (fromJson) {
+    // JSON/default configs get the infrastructure plugins injected automatically.
+    // portRange lives in the ports() plugin options, not on WtenvConfig.
+    plugins = [...defaultPlugins({ portRange: raw.portRange })];
+    if (raw.database) plugins.push(postgres(raw.database));
+  } else {
+    plugins = raw.plugins ?? [];
+  }
 
   return {
-    portRange: raw.portRange ?? DEFAULTS.portRange,
     tld: raw.tld ?? DEFAULTS.tld,
     project: raw.project,
     database: raw.database,
     services: raw.services ?? DEFAULTS.services,
+    plugins,
   };
 }

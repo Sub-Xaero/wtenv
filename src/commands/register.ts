@@ -1,33 +1,35 @@
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { loadConfig } from "../lib/config.js";
-import { allocatePorts } from "../lib/registry.js";
-import { registerDnsmasq } from "../lib/dnsmasq.js";
-import { registerCaddy } from "../lib/caddy.js";
-import { provisionDatabase } from "../lib/database.js";
+import type { PluginContext } from "../lib/config.js";
+import type { PortsPlugin } from "../lib/plugins.js";
+import { worktreeRoot, gitRoot } from "../lib/git.js";
 
 interface RegisterOptions {
   cwd?: string;
-  configRoot?: string; // where .wtenv.json lives (defaults to cwd)
+  configRoot?: string;
   envFile?: string;
   dryRun?: boolean;
 }
 
 export async function register(
-  worktreeName: string,
+  name: string | undefined,
   opts: RegisterOptions = {}
 ): Promise<void> {
-  const cwd = opts.cwd ?? process.cwd();
-  const configRoot = opts.configRoot ?? cwd;
-  const config = loadConfig(configRoot);
-  const serviceNames = Object.keys(config.services);
+  const cwd = opts.cwd ?? worktreeRoot() ?? process.cwd();
+  const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
+  const worktreeName = name ?? basename(cwd);
+  const config = await loadConfig(configRoot);
 
   if (opts.dryRun) {
-    // Compute what would be allocated without touching the registry
-    let nextPort = config.portRange[0];
-    console.log("Dry run — would allocate:");
-    for (const service of serviceNames) {
-      const cfg = config.services[service];
+    const portsPlugin = config.plugins.find((p) => p.name === "wtenv:ports") as
+      | PortsPlugin
+      | undefined;
+    const [rangeStart] = portsPlugin?.portRange ?? [3100, 4099];
+    console.log(`Dry run for '${worktreeName}'\n  cwd:    ${cwd}\n  config: ${configRoot}\n`);
+    console.log("Would allocate:");
+    let nextPort = rangeStart;
+    for (const [service, cfg] of Object.entries(config.services)) {
       const hostname =
         cfg.hostname === "*"
           ? `*.${worktreeName}.${config.tld}`
@@ -35,59 +37,47 @@ export async function register(
       console.log(`  ${service}: port ${nextPort}  →  https://${hostname}`);
       nextPort++;
     }
+    console.log(`\nPlugins: ${config.plugins.map((p) => p.name).join(", ")}`);
     return;
   }
 
-  // Allocate ports
-  const ports = allocatePorts(
-    worktreeName,
-    cwd,
-    serviceNames,
-    config.portRange
-  );
+  const envVars: Record<string, string> = {};
+  const ctx: PluginContext = { worktreeName, cwd, configRoot, ports: {}, envVars, config };
 
-  // Configure dnsmasq
-  registerDnsmasq(worktreeName, config.tld);
-
-  // Configure Caddy
-  const serviceHostnames: Record<string, string> = Object.fromEntries(
-    Object.entries(config.services).map(([name, cfg]) => [name, cfg.hostname])
-  );
-  await registerCaddy(worktreeName, config.tld, ports, serviceHostnames);
-
-  // Provision database if configured
-  const envLines = Object.entries(config.services).map(([service, cfg]) => {
-    const port = ports[service];
-    const lines = [`${cfg.envVar}=${port}`];
-    if (cfg.hmrHostEnvVar && cfg.hostname !== "*") {
-      lines.push(`${cfg.hmrHostEnvVar}=${cfg.hostname}.${worktreeName}.${config.tld}`);
+  const completed: number[] = [];
+  try {
+    for (let i = 0; i < config.plugins.length; i++) {
+      await config.plugins[i].onRegister?.(ctx);
+      completed.push(i);
     }
-    if (cfg.domainEnvVar) {
-      lines.push(`${cfg.domainEnvVar}=${worktreeName}.${config.tld}`);
+  } catch (err) {
+    console.error("\nPlugin failed — rolling back...");
+    for (const i of [...completed].reverse()) {
+      try {
+        await config.plugins[i].onDeregister?.(ctx);
+      } catch {}
     }
-    return lines;
-  }).flat();
-
-  if (config.database) {
-    const dbUrl = provisionDatabase(worktreeName, config.database);
-    envLines.push(`${config.database.envVar}=${dbUrl}`);
+    throw err;
   }
 
   const envFilePath = join(cwd, opts.envFile ?? ".env.worktree");
-  writeFileSync(envFilePath, envLines.join("\n") + "\n");
+  writeFileSync(
+    envFilePath,
+    Object.entries(envVars)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n") + "\n"
+  );
 
   console.log(`Registered worktree '${worktreeName}'`);
   console.log();
-
-  for (const [service, port] of Object.entries(ports)) {
+  for (const [service, port] of Object.entries(ctx.ports)) {
     const cfg = config.services[service];
     const hostname =
       cfg.hostname === "*"
         ? `*.${worktreeName}.${config.tld}`
         : `${cfg.hostname}.${worktreeName}.${config.tld}`;
-    console.log(`  ${service.padEnd(10)} ${cfg.envVar}=${port}   https://${hostname}`);
+    console.log(`  ${service.padEnd(10)} :${port}   https://${hostname}`);
   }
-
   console.log();
   console.log(`Env vars written to ${envFilePath}`);
 }

@@ -6,6 +6,10 @@
   "bin": {
     "wtenv": "./dist/index.js"
   },
+  "exports": {
+    ".": "./dist/lib/exports.js"
+  },
+  "main": "./dist/lib/exports.js",
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",

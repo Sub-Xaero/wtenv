@@ -1,10 +1,9 @@
-import { loadConfig } from "../lib/config.js";
-import { releasePorts, isRegistered } from "../lib/registry.js";
-import { deregisterDnsmasq } from "../lib/dnsmasq.js";
-import { deregisterCaddy } from "../lib/caddy.js";
-import { teardownDatabase } from "../lib/database.js";
 import { unlinkSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { loadConfig } from "../lib/config.js";
+import type { PluginContext } from "../lib/config.js";
+import { isRegistered } from "../lib/registry.js";
+import { worktreeRoot, gitRoot } from "../lib/git.js";
 
 interface DeregisterOptions {
   cwd?: string;
@@ -13,35 +12,37 @@ interface DeregisterOptions {
 }
 
 export async function deregister(
-  worktreeName: string,
+  name: string | undefined,
   opts: DeregisterOptions = {}
 ): Promise<void> {
-  const cwd = opts.cwd ?? process.cwd();
-  const configRoot = opts.configRoot ?? cwd;
+  const cwd = opts.cwd ?? worktreeRoot() ?? process.cwd();
+  const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
+  const worktreeName = name ?? basename(cwd);
 
   if (!isRegistered(worktreeName)) {
     console.error(`Worktree '${worktreeName}' is not registered.`);
     process.exit(1);
   }
 
-  const config = loadConfig(configRoot);
+  const config = await loadConfig(configRoot);
 
-  deregisterDnsmasq(worktreeName);
-  await deregisterCaddy(worktreeName);
-  releasePorts(worktreeName);
+  const ctx: PluginContext = {
+    worktreeName,
+    cwd,
+    configRoot,
+    ports: {},
+    envVars: {},
+    config,
+  };
 
-  if (config.database) {
-    teardownDatabase(worktreeName, config.database);
+  for (const plugin of [...config.plugins].reverse()) {
+    await plugin.onDeregister?.(ctx);
   }
 
-  // Clean up env file
   const envFilePath = join(cwd, opts.envFile ?? ".env.worktree");
   if (existsSync(envFilePath)) {
     unlinkSync(envFilePath);
   }
 
   console.log(`Deregistered worktree '${worktreeName}'`);
-  console.log(`  Removed dnsmasq config for *.${worktreeName}.${config.tld}`);
-  console.log(`  Removed Caddy routes`);
-  console.log(`  Released port allocations`);
 }

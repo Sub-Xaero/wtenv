@@ -1,14 +1,15 @@
 import { loadConfig } from "../lib/config.js";
 import { registerProjectDnsmasq, deregisterProjectDnsmasq } from "../lib/dnsmasq.js";
 import { registerProjectCaddy, deregisterProjectCaddy } from "../lib/caddy.js";
+import { gitRoot } from "../lib/git.js";
 
 interface ProjectOptions {
   configRoot?: string;
 }
 
 export async function projectRegister(opts: ProjectOptions = {}): Promise<void> {
-  const configRoot = opts.configRoot ?? process.cwd();
-  const config = loadConfig(configRoot);
+  const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+  const config = await loadConfig(configRoot);
 
   if (!config.project) {
     console.error("No 'project' section found in .wtenv.json");
@@ -34,8 +35,8 @@ export async function projectRegister(opts: ProjectOptions = {}): Promise<void> 
 }
 
 export async function projectDeregister(opts: ProjectOptions = {}): Promise<void> {
-  const configRoot = opts.configRoot ?? process.cwd();
-  const config = loadConfig(configRoot);
+  const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+  const config = await loadConfig(configRoot);
 
   if (!config.project) {
     console.error("No 'project' section found in .wtenv.json");

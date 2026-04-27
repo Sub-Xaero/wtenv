@@ -4,5 +4,5 @@ interface RegisterOptions {
     envFile?: string;
     dryRun?: boolean;
 }
-export declare function register(worktreeName: string, opts?: RegisterOptions): Promise<void>;
+export declare function register(name: string | undefined, opts?: RegisterOptions): Promise<void>;
 export {};

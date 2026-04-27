@@ -24,20 +24,13 @@ program
     }
 });
 program
-    .command("register <name>")
+    .command("register [name]")
     .description("Allocate ports, configure DNS + proxy, write .env.worktree")
-    .option("--cwd <path>", "Worktree directory — where .env.worktree is written (default: cwd)")
-    .option("--config-root <path>", "Directory containing .wtenv.json (default: --cwd)")
     .option("--env-file <filename>", "Env file name to write", ".env.worktree")
     .option("--dry-run", "Show what would be allocated without making changes")
     .action(async (name, opts) => {
     try {
-        await register(name, {
-            cwd: opts.cwd ?? process.cwd(),
-            configRoot: opts.configRoot,
-            envFile: opts.envFile,
-            dryRun: opts.dryRun,
-        });
+        await register(name, { envFile: opts.envFile, dryRun: opts.dryRun });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
@@ -45,14 +38,12 @@ program
     }
 });
 program
-    .command("deregister <name>")
+    .command("deregister [name]")
     .description("Remove DNS config, Caddy routes, and release port allocations")
-    .option("--cwd <path>", "Worktree directory (to locate .env.worktree)", process.cwd())
-    .option("--config-root <path>", "Directory containing .wtenv.json (default: --cwd)")
     .option("--env-file <filename>", "Env file name to remove", ".env.worktree")
     .action(async (name, opts) => {
     try {
-        await deregister(name, { cwd: opts.cwd, configRoot: opts.configRoot, envFile: opts.envFile });
+        await deregister(name, { envFile: opts.envFile });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
@@ -62,9 +53,9 @@ program
 program
     .command("list")
     .description("List active worktrees with their ports and URLs")
-    .action(() => {
+    .action(async () => {
     try {
-        list();
+        await list();
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
@@ -89,10 +80,10 @@ const projectCmd = program
 projectCmd
     .command("register")
     .description("Register project domains from .wtenv.json project section")
-    .option("--config-root <path>", "Directory containing .wtenv.json (default: cwd)")
+    .option("--config-root <path>", "Directory containing .wtenv.json (default: git root)")
     .action(async (opts) => {
     try {
-        await projectRegister({ configRoot: opts.configRoot ?? process.cwd() });
+        await projectRegister({ configRoot: opts.configRoot });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
@@ -102,10 +93,10 @@ projectCmd
 projectCmd
     .command("deregister")
     .description("Remove project domain registrations")
-    .option("--config-root <path>", "Directory containing .wtenv.json (default: cwd)")
+    .option("--config-root <path>", "Directory containing .wtenv.json (default: git root)")
     .action(async (opts) => {
     try {
-        await projectDeregister({ configRoot: opts.configRoot ?? process.cwd() });
+        await projectDeregister({ configRoot: opts.configRoot });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
