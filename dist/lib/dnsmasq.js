@@ -10,14 +10,12 @@ export function registerDnsmasq(worktreeName, tld) {
     const content = `address=/.${worktreeName}.${tld}/127.0.0.1\n`;
     writeFileSync(confPath(worktreeName), content);
     reloadDnsmasq();
-    flushDnsCache();
 }
 export function deregisterDnsmasq(worktreeName) {
     const path = confPath(worktreeName);
     if (existsSync(path)) {
         unlinkSync(path);
         reloadDnsmasq();
-        flushDnsCache();
     }
 }
 // Register static project domains (e.g. *.campfront.local).
