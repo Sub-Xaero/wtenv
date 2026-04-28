@@ -121,7 +121,11 @@ function buildWorktreeRoutes(
 
   if (wildcardPort !== undefined) {
     routes.push({
-      match: [{ host: [`*.${worktreeName}.${tld}`] }],
+      match: [{ host: [
+        `*.${worktreeName}.${tld}`,
+        `*.*.${worktreeName}.${tld}`,
+        `*.*.*.${worktreeName}.${tld}`,
+      ]}],
       handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `localhost:${wildcardPort}` }] }],
     });
   }
