@@ -33,16 +33,16 @@ export function registerProjectDnsmasq(projectName: string, baseDomain: string):
   reloadDnsmasq();
 
   const resolverPath = `/etc/resolver/${baseDomain}`;
-  const resolverContent = "nameserver 127.0.0.1\n";
+  const resolverContent = "nameserver 127.0.0.1\nport 5300\n";
   const existing = existsSync(resolverPath) ? readFileSync(resolverPath, "utf8") : "";
   if (existing.trim() !== resolverContent.trim()) {
     const result = spawnSync(
       "sudo",
-      ["bash", "-c", `mkdir -p /etc/resolver && printf '${resolverContent}' > ${resolverPath}`],
+      ["bash", "-c", `mkdir -p /etc/resolver && printf 'nameserver 127.0.0.1\\nport 5300\\n' > ${resolverPath}`],
       { stdio: "inherit" }
     );
     if (result.status !== 0) {
-      console.warn(`  Could not create ${resolverPath} — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\n' > ${resolverPath}"`);
+      console.warn(`  Could not create ${resolverPath} — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\\\nport 5300\\\\n' > ${resolverPath}"`);
     } else {
       flushDnsCache();
     }

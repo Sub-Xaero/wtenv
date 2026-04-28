@@ -83,33 +83,20 @@ export async function setup() {
         run("brew services start dnsmasq", "Starting dnsmasq as user service");
     }
     // --- /etc/resolver/test ---
-    const resolverContent = "nameserver 127.0.0.1\n";
+    // Tell macOS resolver to query dnsmasq directly on port 5300 (no pfctl redirect needed).
+    // macOS pf rdr rules don't intercept locally-generated traffic, so port forwarding
+    // 53→5300 doesn't work for system DNS queries.
+    const resolverContent = "nameserver 127.0.0.1\nport 5300\n";
     const existingResolver = existsSync(RESOLVER_PATH) ? readFileSync(RESOLVER_PATH, "utf8") : "";
     if (existingResolver.trim() !== resolverContent.trim()) {
         console.log("  Writing /etc/resolver/test (requires sudo)...");
-        const result = spawnSync("sudo", ["bash", "-c", `mkdir -p /etc/resolver && printf '${resolverContent}' > ${RESOLVER_PATH}`], { stdio: "inherit" });
+        const result = spawnSync("sudo", ["bash", "-c", `mkdir -p /etc/resolver && printf 'nameserver 127.0.0.1\\nport 5300\\n' > ${RESOLVER_PATH}`], { stdio: "inherit" });
         if (result.status !== 0) {
-            console.log(`  failed — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\n' > ${RESOLVER_PATH}"`);
+            console.log(`  failed — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\\\nport 5300\\\\n' > ${RESOLVER_PATH}"`);
         }
     }
     else {
         console.log(`  ${RESOLVER_PATH} already configured`);
-    }
-    // --- pfctl: forward loopback port 53 → 5300 so dnsmasq runs without root ---
-    const PF_ANCHOR_PATH = "/etc/pf.anchors/dev.dnsmasq";
-    const pfRule = "rdr pass on lo0 proto udp from any to 127.0.0.1 port 53 -> 127.0.0.1 port 5300\n";
-    const existingPfRule = existsSync(PF_ANCHOR_PATH) ? readFileSync(PF_ANCHOR_PATH, "utf8") : "";
-    if (existingPfRule.trim() !== pfRule.trim()) {
-        console.log("  Setting up pfctl DNS redirect (requires sudo)...");
-        const pfResult = spawnSync("sudo", ["bash", "-c", `printf '${pfRule}' > ${PF_ANCHOR_PATH} && pfctl -ef ${PF_ANCHOR_PATH} 2>/dev/null; true`], { stdio: "inherit" });
-        if (pfResult.status !== 0) {
-            console.log(`  failed — run manually:\n    sudo bash -c "printf '${pfRule.trim()}\\n' > ${PF_ANCHOR_PATH} && pfctl -ef ${PF_ANCHOR_PATH}"`);
-        }
-    }
-    else {
-        // Reload in case pf rules were lost after reboot
-        spawnSync("sudo", ["pfctl", "-ef", PF_ANCHOR_PATH], { stdio: "ignore" });
-        console.log("  pfctl DNS redirect already configured");
     }
     // --- Caddy ---
     const caddyInstalled = spawnSync("which", ["caddy"], { stdio: "pipe" }).status === 0;

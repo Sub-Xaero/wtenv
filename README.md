@@ -43,7 +43,7 @@ npm link wtenv
 wtenv setup
 ```
 
-Installs and configures dnsmasq, writes `/etc/resolver/test` for macOS DNS routing, configures pfctl to forward port 53 → 5300 (so dnsmasq doesn't need root), and trusts Caddy's local CA.
+Installs and configures dnsmasq (listening on port 5300 so it doesn't need root), writes `/etc/resolver/test` pointing macOS's resolver at `127.0.0.1:5300`, and trusts Caddy's local CA.
 
 ## Configuration
 
@@ -93,7 +93,7 @@ wtenv auto-detects everything from git — no flags needed:
 |---|---|---|
 | `tld` | `"test"` | TLD for all worktree domains |
 | `services` | `{ web: { hostname: "*" } }` | Services to allocate ports for |
-| `project` | — | Static project domain config (see `wtenv project`) |
+| `project` | — | Static project domain config (see [Project domains](#project-domains)) |
 | `plugins` | `[]` | Plugin pipeline — runs in order on register, reverse on deregister |
 
 ### Service config
@@ -127,6 +127,56 @@ env: {
   ASSETS_URL:     'https://{fqdn}', // → "https://assets.almaty.test"
 }
 ```
+
+---
+
+## Project domains
+
+The `project` config block registers **static, non-worktree domains** — fixed hostnames that point to specific local ports regardless of which worktree is active. This is useful for services that run once for the whole project (a shared API gateway, a shared asset server, a stub service, etc.).
+
+### Config shape
+
+```js
+export default defineConfig({
+  // ...
+  project: {
+    name:       'myapp',          // used as an identifier in dnsmasq/Caddy configs
+    baseDomain: 'myapp.test',     // wildcard base — *.myapp.test + myapp.test resolve to 127.0.0.1
+    domains: [
+      { hostname: 'myapp.test',        port: 5000 }, // root domain
+      { hostname: 'api.myapp.test',    port: 5001 }, // subdomain
+      { hostname: 'assets.myapp.test', port: 5002 },
+    ],
+  },
+});
+```
+
+| Field | Description |
+|---|---|
+| `name` | Identifier for this project's dnsmasq and Caddy entries |
+| `baseDomain` | The shared TLD for this project — dnsmasq routes all `*.baseDomain` traffic to `127.0.0.1`, and `/etc/resolver/<baseDomain>` is created so macOS uses dnsmasq for this domain |
+| `domains` | Array of `{ hostname, port }` entries — Caddy creates an HTTPS reverse-proxy route for each one |
+
+### Commands
+
+```bash
+# Register project domains (writes dnsmasq config + Caddy routes)
+wtenv project register [--config-root <path>]
+
+# Remove project domains
+wtenv project deregister [--config-root <path>]
+```
+
+Both commands read from `.wtenv.config.js` (or `.wtenv.json`) at the git root. Pass `--config-root` to point at a different directory.
+
+### How it differs from worktree registration
+
+| | `wtenv register` | `wtenv project register` |
+|---|---|---|
+| Ports | Dynamically allocated per worktree | Fixed — you specify the port |
+| DNS | `*.{worktree}.{tld}` | `*.{baseDomain}` |
+| Intended for | Per-branch environments | Shared/singleton services |
+| Persisted in registry | Yes | No |
 
 ---
 
@@ -255,6 +305,9 @@ function myPlugin(options) {
 ## Commands
 
 ```bash
+# Scaffold a .wtenv.config.js with sensible defaults (auto-detects project name and Postgres deps)
+wtenv init [--force] [--cwd <path>]
+
 # Register a worktree — auto-detects name, cwd, and config from git
 wtenv register [name] [--env-file <filename>] [--dry-run]
 

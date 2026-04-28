@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { setup } from "./commands/setup.js";
+import { init } from "./commands/init.js";
 import { register } from "./commands/register.js";
 import { deregister } from "./commands/deregister.js";
 import { list } from "./commands/list.js";
@@ -17,6 +18,20 @@ program
     .action(async () => {
     try {
         await setup();
+    }
+    catch (err) {
+        console.error(err instanceof Error ? err.message : err);
+        process.exit(1);
+    }
+});
+program
+    .command("init")
+    .description("Scaffold a .wtenv.config.js file with sensible defaults")
+    .option("--force", "Overwrite an existing .wtenv.config.js")
+    .option("--cwd <path>", "Directory to create the config in (default: current directory)")
+    .action((opts) => {
+    try {
+        init(opts);
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
