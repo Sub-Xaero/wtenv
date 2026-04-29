@@ -1,5 +1,6 @@
 import { execSync, spawnSync } from "node:child_process";
 import { writeFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { isCaddyRunning, setListener } from "../lib/caddy.js";
 const RESOLVER_PATH = "/etc/resolver/test";
 const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
@@ -86,13 +87,15 @@ export async function setup() {
     // Tell macOS resolver to query dnsmasq directly on port 5300 (no pfctl redirect needed).
     // macOS pf rdr rules don't intercept locally-generated traffic, so port forwarding
     // 53→5300 doesn't work for system DNS queries.
-    const resolverContent = "nameserver 127.0.0.1\nport 5300\n";
+    // use-vc forces TCP queries — dnsmasq has a macOS UDP socket bug where it stops
+    // receiving after the first packet; TCP is reliable for multiple concurrent queries.
+    const resolverContent = "nameserver 127.0.0.1\nport 5300\noptions use-vc\n";
     const existingResolver = existsSync(RESOLVER_PATH) ? readFileSync(RESOLVER_PATH, "utf8") : "";
     if (existingResolver.trim() !== resolverContent.trim()) {
         console.log("  Writing /etc/resolver/test (requires sudo)...");
-        const result = spawnSync("sudo", ["bash", "-c", `mkdir -p /etc/resolver && printf 'nameserver 127.0.0.1\\nport 5300\\n' > ${RESOLVER_PATH}`], { stdio: "inherit" });
+        const result = spawnSync("sudo", ["bash", "-c", `mkdir -p /etc/resolver && printf 'nameserver 127.0.0.1\\nport 5300\\noptions use-vc\\n' > ${RESOLVER_PATH}`], { stdio: "inherit" });
         if (result.status !== 0) {
-            console.log(`  failed — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\\\nport 5300\\\\n' > ${RESOLVER_PATH}"`);
+            console.log(`  failed — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\\\nport 5300\\\\noptions use-vc\\\\n' > ${RESOLVER_PATH}"`);
         }
     }
     else {
@@ -141,6 +144,47 @@ export async function setup() {
         console.log("\nNote: port 443 is in use (LocalCan?). Caddy stays on :80.");
         console.log("      Quit LocalCan and re-run 'wtenv setup' to enable HTTPS.");
     }
+    // --- Caddy restore on login ---
+    // Routes are stored in Caddy's memory and lost on restart. A LaunchAgent runs
+    // a shell script on login that waits for Caddy then POSTs the saved config back.
+    const configDir = join(process.env.HOME, ".config", "wtenv");
+    mkdirSync(configDir, { recursive: true });
+    const restoreScript = join(configDir, "caddy-restore.sh");
+    const caddyJson = join(configDir, "caddy.json");
+    writeFileSync(restoreScript, `#!/bin/bash
+CONFIG="${caddyJson}"
+for i in $(seq 1 30); do
+  curl -sf http://localhost:2019/config/ > /dev/null 2>&1 && break
+  sleep 1
+done
+[ -f "$CONFIG" ] && curl -sf -X POST http://localhost:2019/load \\
+  -H "Content-Type: application/json" \\
+  -d "@$CONFIG" > /dev/null 2>&1
+`, { mode: 0o755 });
+    const plistPath = join(process.env.HOME, "Library", "LaunchAgents", "wtenv.caddy-restore.plist");
+    writeFileSync(plistPath, `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>wtenv.caddy-restore</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${restoreScript}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/wtenv-caddy-restore.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/wtenv-caddy-restore.log</string>
+</dict>
+</plist>
+`);
+    spawnSync("launchctl", ["unload", plistPath], { stdio: "ignore" });
+    spawnSync("launchctl", ["load", plistPath], { stdio: "ignore" });
+    console.log("  Caddy restore agent installed");
     console.log("\nSetup complete.");
     console.log("Verify DNS: ping -c1 anything.test  — should resolve to 127.0.0.1");
 }

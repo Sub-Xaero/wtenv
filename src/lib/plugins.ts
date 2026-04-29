@@ -49,7 +49,7 @@ export function caddy(): Plugin {
       await registerCaddy(ctx.worktreeName, ctx.config.tld, ctx.ports, serviceHostnames);
     },
     async onDeregister(ctx) {
-      await deregisterCaddy(ctx.worktreeName);
+      await deregisterCaddy(ctx.worktreeName, ctx.config.tld);
     },
   };
 }

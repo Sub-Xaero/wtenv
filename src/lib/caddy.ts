@@ -1,8 +1,17 @@
 import * as http from "node:http";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import type { ProjectDomain } from "./config.js";
 
 const CADDY_ADMIN_HOST = "localhost";
 const CADDY_ADMIN_PORT = 2019;
+const CADDY_CONFIG_DIR = join(process.env.HOME!, ".config", "wtenv");
+const CADDY_CONFIG_PATH = join(CADDY_CONFIG_DIR, "caddy.json");
+
+function persistConfig(body: string): void {
+  mkdirSync(CADDY_CONFIG_DIR, { recursive: true });
+  writeFileSync(CADDY_CONFIG_PATH, body);
+}
 
 interface CaddyRoute {
   match: Array<{ host: string[] }>;
@@ -21,7 +30,7 @@ interface CaddyConfig {
     };
     tls?: {
       automation?: {
-        policies?: Array<{ issuers: Array<{ module: string }> }>;
+        policies?: Array<{ subjects?: string[]; issuers: Array<{ module: string }>; on_demand?: boolean }>;
       };
     };
   };
@@ -66,20 +75,43 @@ async function patchRoutes(
   const listen = currentServer?.listen ?? [":443", ":80"];
   const filtered = currentRoutes.filter(filterFn);
 
+  const allRoutes = [...filtered, ...newRoutes];
+
+  // Collect hostnames that are safe to pre-provision: exact names and single-level
+  // wildcards (*.foo.test). Multi-level wildcards (*.*.foo.test) are deliberately
+  // excluded — Caddy would issue a *.*.foo.test cert which browsers reject (RFC
+  // wildcards only cover one label). Those hostnames fall through to the on-demand
+  // policy instead, which provisions an exact cert per SNI hostname.
+  const singleLevelSubjects = Array.from(new Set(
+    allRoutes.flatMap((r) =>
+      r.match.flatMap((m) =>
+        (m.host ?? []).filter((h) => (h.match(/\*/g) ?? []).length <= 1)
+      )
+    )
+  ));
+
   const body = JSON.stringify({
     apps: {
       http: {
         servers: {
           wtenv: {
             listen,
-            routes: [...filtered, ...newRoutes],
+            routes: allRoutes,
           },
         },
       },
       tls: {
         automation: {
-          // Use Caddy's internal CA for all local dev domains — no ACME needed
-          policies: [{ issuers: [{ module: "internal" }] }],
+          policies: [
+            // Pre-provision certs only for exact names and single-level wildcards.
+            ...(singleLevelSubjects.length > 0
+              ? [{ subjects: singleLevelSubjects, issuers: [{ module: "internal" }] }]
+              : []),
+            // Catch-all on-demand policy: issues an exact cert per SNI hostname for
+            // multi-level subdomains (e.g. pro-company.dev.wavy.test). No pre-provisioning
+            // occurs so the *.*.wavy.test wildcard never enters the cert cache.
+            { issuers: [{ module: "internal" }], on_demand: true },
+          ],
         },
       },
     },
@@ -96,6 +128,7 @@ async function patchRoutes(
     body
   );
   if (status !== 200) throw new Error(`Caddy load failed (${status}): ${data}`);
+  persistConfig(body);
 }
 
 function buildWorktreeRoutes(
@@ -122,6 +155,7 @@ function buildWorktreeRoutes(
   if (wildcardPort !== undefined) {
     routes.push({
       match: [{ host: [
+        `${worktreeName}.${tld}`,
         `*.${worktreeName}.${tld}`,
         `*.*.${worktreeName}.${tld}`,
         `*.*.*.${worktreeName}.${tld}`,
@@ -134,17 +168,28 @@ function buildWorktreeRoutes(
 }
 
 function buildProjectRoutes(domains: ProjectDomain[]): CaddyRoute[] {
-  // Sort: specific hostnames (no wildcard) first, wildcards last
+  // Sort: specific hostnames first, wildcards last
   const sorted = [...domains].sort((a, b) => {
     const aWild = a.hostname.startsWith("*") ? 1 : 0;
     const bWild = b.hostname.startsWith("*") ? 1 : 0;
     return aWild - bWild;
   });
 
-  return sorted.map((d) => ({
-    match: [{ host: [d.hostname] }],
-    handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `localhost:${d.port}` }] }],
-  }));
+  return sorted.map((d) => {
+    // Expand single wildcard (*.wavy.test) into multi-level wildcards so that
+    // deeply nested subdomains like pro-company.dev.wavy.test are also routed.
+    const hosts = d.hostname.startsWith("*.")
+      ? [d.hostname, `*.${d.hostname}`, `*.*.${d.hostname}`]
+      : [d.hostname];
+    return {
+      match: [{ host: hosts }],
+      handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `localhost:${d.port}` }] }],
+    };
+  });
+}
+
+function isWorktreeHost(h: string, worktreeName: string, tld: string): boolean {
+  return h === `${worktreeName}.${tld}` || h.includes(`.${worktreeName}.`);
 }
 
 export async function registerCaddy(
@@ -156,14 +201,14 @@ export async function registerCaddy(
   const newRoutes = buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames);
   await patchRoutes(
     newRoutes,
-    (r) => !r.match.some((m) => m.host?.some((h) => h.includes(`.${worktreeName}.`)))
+    (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, worktreeName, tld)))
   );
 }
 
-export async function deregisterCaddy(worktreeName: string): Promise<void> {
+export async function deregisterCaddy(worktreeName: string, tld: string): Promise<void> {
   await patchRoutes(
     [],
-    (r) => !r.match.some((m) => m.host?.some((h) => h.includes(`.${worktreeName}.`)))
+    (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, worktreeName, tld)))
   );
 }
 
@@ -224,6 +269,7 @@ export async function setListener(ports: string[]): Promise<void> {
     body
   );
   if (status !== 200) throw new Error(`Caddy load failed (${status}): ${data}`);
+  persistConfig(body);
 }
 
 export async function isCaddyRunning(): Promise<boolean> {
