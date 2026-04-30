@@ -4,6 +4,8 @@ import { setup } from "./commands/setup.js";
 import { init } from "./commands/init.js";
 import { register } from "./commands/register.js";
 import { deregister } from "./commands/deregister.js";
+import { reregister } from "./commands/reregister.js";
+import { reset } from "./commands/reset.js";
 import { list } from "./commands/list.js";
 import { status } from "./commands/status.js";
 import { projectRegister, projectDeregister } from "./commands/project.js";
@@ -62,6 +64,31 @@ program
   .action(async (name: string | undefined, opts: { envFile: string }) => {
     try {
       await deregister(name, { envFile: opts.envFile });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("reregister [name]")
+  .description("Deregister the current worktree (if registered) then register it again")
+  .option("--env-file <filename>", "Env file name to write", ".env.worktree")
+  .action(async (name: string | undefined, opts: { envFile: string }) => {
+    try {
+      await reregister(name, { envFile: opts.envFile });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("reset")
+  .description("Deregister all currently registered worktrees")
+  .action(async () => {
+    try {
+      await reset();
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);
