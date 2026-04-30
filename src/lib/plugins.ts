@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
@@ -141,6 +141,26 @@ function runCommands(commands: string[], ctx: PluginContext): void {
       throw new Error(`shell: command failed (exit ${result.status ?? "?"}): ${cmd}`);
     }
   }
+}
+
+export interface DirenvOptions {
+  envFile?: string;
+}
+
+export function direnv(options: DirenvOptions = {}): Plugin {
+  const envFile = options.envFile ?? ".env.worktree";
+  return {
+    name: "wtenv:direnv",
+    onRegister(ctx: PluginContext) {
+      writeFileSync(join(ctx.cwd, ".envrc"), `dotenv ${envFile}\n`);
+    },
+    onDeregister(ctx: PluginContext) {
+      const envrcPath = join(ctx.cwd, ".envrc");
+      if (existsSync(envrcPath)) {
+        unlinkSync(envrcPath);
+      }
+    },
+  };
 }
 
 export function postgres(options: DatabaseConfig): Plugin {

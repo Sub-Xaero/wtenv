@@ -1,6 +1,6 @@
 export { defineConfig } from "./config.js";
-export { dns, caddy, serviceEnv, defaultPlugins, copyFiles, shell, postgres, ports } from "./plugins.js";
-export type { CopyFilesOptions, ShellOptions, PortsPlugin } from "./plugins.js";
+export { dns, caddy, serviceEnv, defaultPlugins, copyFiles, shell, postgres, ports, direnv } from "./plugins.js";
+export type { CopyFilesOptions, ShellOptions, PortsPlugin, DirenvOptions } from "./plugins.js";
 export type {
   Plugin,
   PluginContext,

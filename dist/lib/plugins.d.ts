@@ -24,4 +24,8 @@ export interface ShellOptions {
     onDeregister?: string[];
 }
 export declare function shell(options: ShellOptions): Plugin;
+export interface DirenvOptions {
+    envFile?: string;
+}
+export declare function direnv(options?: DirenvOptions): Plugin;
 export declare function postgres(options: DatabaseConfig): Plugin;
