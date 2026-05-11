@@ -5,6 +5,8 @@ import { isCaddyRunning, setListener } from "../lib/caddy.js";
 const RESOLVER_PATH = "/etc/resolver/test";
 const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
 const DNSMASQ_CONF = "/opt/homebrew/etc/dnsmasq.conf";
+const CADDY_DAEMON_PLIST = "/Library/LaunchDaemons/wtenv.caddy.plist";
+const CADDY_PID_FILE = "/tmp/wtenv-caddy.pid";
 function run(cmd, label, timeoutMs = 15_000) {
     process.stdout.write(`  ${label}... `);
     try {
@@ -101,6 +103,10 @@ export async function setup() {
     else {
         console.log(`  ${RESOLVER_PATH} already configured`);
     }
+    // Flush mDNSResponder cache so the new resolver config is picked up immediately.
+    // Without this, stale negative entries cause resolution failures until the cache expires.
+    console.log("  Flushing DNS cache (requires sudo)...");
+    spawnSync("sudo", ["bash", "-c", "dscacheutil -flushcache && killall -HUP mDNSResponder"], { stdio: "inherit" });
     // --- Caddy ---
     const caddyInstalled = spawnSync("which", ["caddy"], { stdio: "pipe" }).status === 0;
     if (!caddyInstalled) {
@@ -109,23 +115,67 @@ export async function setup() {
     else {
         console.log("  Caddy already installed");
     }
-    // Write Caddy config to the brew location so brew services picks it up
+    // Write Caddyfile (fallback config used on first boot before --resume has a saved state)
     const caddyfileContent = `{\n  admin localhost:2019\n}\n`;
     const brewCaddyfile = "/opt/homebrew/etc/Caddyfile";
     if (!existsSync(brewCaddyfile) || !readFileSync(brewCaddyfile, "utf8").includes("admin localhost:2019")) {
         writeFileSync(brewCaddyfile, caddyfileContent);
         console.log("  Wrote Caddy config");
     }
+    // Use our own LaunchDaemon instead of brew's so we can pass --resume and --pidfile.
+    // --resume: Caddy reloads its last-saved config on restart (no manual restore needed).
+    // --pidfile: gives the restore agent a WatchPaths trigger for edge cases.
+    const daemonPlistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>wtenv.caddy</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/opt/caddy/bin/caddy</string>
+    <string>run</string>
+    <string>--config</string>
+    <string>/opt/homebrew/etc/Caddyfile</string>
+    <string>--resume</string>
+    <string>--pidfile</string>
+    <string>${CADDY_PID_FILE}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/opt/homebrew/var/lib</string>
+    <key>XDG_DATA_HOME</key>
+    <string>/opt/homebrew/var/lib</string>
+  </dict>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/opt/homebrew/var/log/caddy.log</string>
+  <key>StandardErrorPath</key>
+  <string>/opt/homebrew/var/log/caddy.log</string>
+</dict>
+</plist>
+`;
     const caddyApiUp = await isCaddyRunning();
-    if (caddyApiUp) {
-        console.log("  Caddy already running");
+    const daemonIsCurrent = existsSync(CADDY_DAEMON_PLIST) &&
+        readFileSync(CADDY_DAEMON_PLIST, "utf8").includes("--resume");
+    if (caddyApiUp && daemonIsCurrent) {
+        console.log("  Caddy already running with wtenv daemon");
     }
     else {
-        // Needs root to bind :80 — use sudo brew services
-        console.log("  Starting Caddy as system service (requires sudo)...");
-        const result = spawnSync("sudo", ["brew", "services", "start", "caddy"], { stdio: "inherit", timeout: 15_000 });
+        // Unload brew's service if present to avoid port conflicts
+        if (existsSync("/Library/LaunchDaemons/homebrew.mxcl.caddy.plist")) {
+            spawnSync("sudo", ["launchctl", "unload", "/Library/LaunchDaemons/homebrew.mxcl.caddy.plist"], { stdio: "pipe" });
+        }
+        const tmpDaemon = "/tmp/wtenv-caddy-daemon.plist";
+        writeFileSync(tmpDaemon, daemonPlistContent);
+        console.log("  Installing Caddy service (requires sudo)...");
+        const result = spawnSync("sudo", ["bash", "-c", `launchctl unload '${CADDY_DAEMON_PLIST}' 2>/dev/null; cp '${tmpDaemon}' '${CADDY_DAEMON_PLIST}' && launchctl load '${CADDY_DAEMON_PLIST}'`], { stdio: "inherit", timeout: 15_000 });
         if (result.status !== 0) {
-            console.log("  failed — run manually: sudo brew services start caddy");
+            console.log(`  failed — run manually: sudo cp ${tmpDaemon} ${CADDY_DAEMON_PLIST} && sudo launchctl load ${CADDY_DAEMON_PLIST}`);
         }
     }
     run("caddy trust", "Trusting Caddy local CA (may prompt for password)", 30_000);
@@ -144,9 +194,10 @@ export async function setup() {
         console.log("\nNote: port 443 is in use (LocalCan?). Caddy stays on :80.");
         console.log("      Quit LocalCan and re-run 'wtenv setup' to enable HTTPS.");
     }
-    // --- Caddy restore on login ---
-    // Routes are stored in Caddy's memory and lost on restart. A LaunchAgent runs
-    // a shell script on login that waits for Caddy then POSTs the saved config back.
+    // --- Caddy restore agent (safety net) ---
+    // Caddy's --resume handles config reload on restart automatically. This agent
+    // is a fallback: it fires at login and whenever the PID file appears (Caddy restart),
+    // then POSTs the saved config if the autosave is empty or stale.
     const configDir = join(process.env.HOME, ".config", "wtenv");
     mkdirSync(configDir, { recursive: true });
     const restoreScript = join(configDir, "caddy-restore.sh");
@@ -175,6 +226,10 @@ done
   </array>
   <key>RunAtLoad</key>
   <true/>
+  <key>WatchPaths</key>
+  <array>
+    <string>${CADDY_PID_FILE}</string>
+  </array>
   <key>StandardOutPath</key>
   <string>/tmp/wtenv-caddy-restore.log</string>
   <key>StandardErrorPath</key>
