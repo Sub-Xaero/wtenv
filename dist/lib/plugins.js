@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
 import { registerCaddy, deregisterCaddy } from "./caddy.js";
+import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./mdns.js";
 import { provisionDatabase, teardownDatabase } from "./database.js";
 import { allocatePorts, releasePorts } from "./registry.js";
 export function ports(options) {
@@ -25,9 +26,15 @@ export function dns() {
         name: "wtenv:dns",
         onRegister(ctx) {
             registerDnsmasq(ctx.worktreeName, ctx.config.tld);
+            // For tld: 'local', also publish the bare 2-label name via mDNS since /etc/resolver
+            // files don't intercept bare .local queries before mDNSResponder.
+            const bareLocals = bareLocalHostnames(`${ctx.worktreeName}.${ctx.config.tld}`, []);
+            if (bareLocals.length > 0)
+                registerMdnsHosts(ctx.worktreeName, bareLocals);
         },
         onDeregister(ctx) {
-            deregisterDnsmasq(ctx.worktreeName);
+            deregisterMdnsHosts(ctx.worktreeName);
+            deregisterDnsmasq(ctx.worktreeName, ctx.config.tld);
         },
     };
 }

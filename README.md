@@ -91,7 +91,7 @@ wtenv auto-detects everything from git — no flags needed:
 
 | Field | Default | Description |
 |---|---|---|
-| `tld` | `"test"` | TLD for all worktree domains |
+| `tld` | `"test"` | TLD for all worktree domains. `.local` is supported but requires sudo per `wtenv register` — see [.local caveat](#local-caveat) |
 | `services` | `{ web: { hostname: "*" } }` | Services to allocate ports for |
 | `project` | — | Static project domain config (see [Project domains](#project-domains)) |
 | `plugins` | `[]` | Plugin pipeline — runs in order on register, reverse on deregister |
@@ -154,8 +154,19 @@ export default defineConfig({
 | Field | Description |
 |---|---|
 | `name` | Identifier for this project's dnsmasq and Caddy entries |
-| `baseDomain` | The shared TLD for this project — dnsmasq routes all `*.baseDomain` traffic to `127.0.0.1`, and `/etc/resolver/<baseDomain>` is created so macOS uses dnsmasq for this domain |
+| `baseDomain` | The shared TLD for this project — dnsmasq routes all `*.baseDomain` traffic to `127.0.0.1`, and `/etc/resolver/<baseDomain>` is created so macOS uses dnsmasq for this domain. `.local` TLDs are supported — see [.local caveat](#local-caveat) |
 | `domains` | Array of `{ hostname, port }` entries — Caddy creates an HTTPS reverse-proxy route for each one |
+
+### .local caveat
+
+`.local` is reserved for [mDNS/Bonjour](https://datatracker.ietf.org/doc/html/rfc6762) on macOS, so it needs extra handling — but wtenv supports it for both project and worktree domains.
+
+For project (`baseDomain`) and worktree (`tld`) `.local` domains, wtenv handles things by:
+
+1. Writing a **scoped resolver file** (e.g. `/etc/resolver/myapp.local` for projects, or `/etc/resolver/<worktree>.local` for worktrees) so macOS routes subdomain queries through dnsmasq. Only that specific domain is affected — Bonjour for other `.local` names is unaffected.
+2. For the **bare 2-label `.local` name itself** (e.g. `myapp.local`, not `api.myapp.local`), publishing it via mDNS through a LaunchAgent (`~/Library/LaunchAgents/wtenv.mdns.<name>.plist`) that runs `dns-sd -P`. This is necessary because mDNSResponder intercepts bare `.local` queries before consulting `/etc/resolver` files; without mDNS publishing, `getaddrinfo()` (used by browsers and curl) takes 5 seconds to fall through to a fallback. Multi-label subdomains resolve through the resolver file and don't need this.
+
+wtenv deliberately does **not** create a global `/etc/resolver/local` — that would shadow Bonjour for every `.local` name on the machine. The trade-off: each `wtenv register` (or `wtenv project register`) on a `.local` domain prompts once for sudo to write its scoped resolver file.
 
 ### Commands
 
@@ -175,6 +186,7 @@ Both commands read from `.wtenv.config.js` (or `.wtenv.json`) at the git root. P
 |---|---|---|
 | Ports | Dynamically allocated per worktree | Fixed — you specify the port |
 | DNS | `*.{worktree}.{tld}` | `*.{baseDomain}` |
+| `.local` support | ✅ yes (sudo on each register) | ✅ yes (sudo on each register) |
 | Intended for | Per-branch environments | Shared/singleton services |
 | Persisted in registry | Yes | No |
 

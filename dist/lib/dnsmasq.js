@@ -10,15 +10,42 @@ export function registerDnsmasq(worktreeName, tld) {
     // local= prevents dnsmasq from forwarding to upstream — without it, dnsmasq
     // intermittently forwards queries instead of applying the address rule, causing
     // 30-second timeouts when upstream can't resolve .test domains.
-    const content = `local=/.${worktreeName}.${tld}/\naddress=/.${worktreeName}.${tld}/127.0.0.1\n`;
+    const domain = `${worktreeName}.${tld}`;
+    const content = `local=/.${domain}/\naddress=/.${domain}/127.0.0.1\n`;
     writeFileSync(confPath(worktreeName), content);
     reloadDnsmasq();
+    // If the TLD has a global resolver file (e.g. /etc/resolver/test written by setup),
+    // subdomain queries already route to dnsmasq — nothing else to do.
+    if (existsSync(`/etc/resolver/${tld}`))
+        return;
+    // Otherwise write a per-worktree resolver file so subdomain queries route to dnsmasq.
+    // This is the path .local TLDs take: we deliberately don't create /etc/resolver/local
+    // globally because it would shadow Bonjour for every .local name on the machine.
+    const resolverPath = `/etc/resolver/${domain}`;
+    const resolverContent = "nameserver 127.0.0.1\nport 5300\noptions use-vc\n";
+    const existing = existsSync(resolverPath) ? readFileSync(resolverPath, "utf8") : "";
+    if (existing.trim() === resolverContent.trim())
+        return;
+    const result = spawnSync("sudo", ["bash", "-c", `mkdir -p /etc/resolver && printf 'nameserver 127.0.0.1\\nport 5300\\noptions use-vc\\n' > ${resolverPath}`], { stdio: "inherit" });
+    if (result.status !== 0) {
+        console.warn(`  Could not create ${resolverPath} — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\\\nport 5300\\\\noptions use-vc\\\\n' > ${resolverPath}"`);
+    }
+    else {
+        flushDnsCache();
+    }
 }
-export function deregisterDnsmasq(worktreeName) {
+export function deregisterDnsmasq(worktreeName, tld) {
     const path = confPath(worktreeName);
     if (existsSync(path)) {
         unlinkSync(path);
         reloadDnsmasq();
+    }
+    // Remove per-worktree resolver file if we created one
+    if (tld && !existsSync(`/etc/resolver/${tld}`)) {
+        const resolverPath = `/etc/resolver/${worktreeName}.${tld}`;
+        if (existsSync(resolverPath)) {
+            spawnSync("sudo", ["rm", resolverPath], { stdio: "inherit" });
+        }
     }
 }
 // Register static project domains (e.g. *.campfront.local).
