@@ -47,5 +47,9 @@ export async function projectDeregister(opts = {}) {
     console.log(`Project '${name}' deregistered.`);
     console.log(`  Removed dnsmasq config for *.${baseDomain}`);
     console.log(`  Removed /etc/resolver/${baseDomain}`);
+    const bareLocals = bareLocalHostnames(baseDomain, domains.map((d) => d.hostname));
+    if (bareLocals.length > 0) {
+        console.log(`  Removed mDNS LaunchAgent (wtenv.mdns.${name})`);
+    }
     console.log(`  Removed Caddy routes`);
 }
