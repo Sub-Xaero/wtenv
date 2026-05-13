@@ -38,43 +38,31 @@ async function getConfig() {
         return null;
     }
 }
-async function patchRoutes(newRoutes, filterFn) {
-    const existing = await getConfig();
-    const currentServer = existing?.apps?.http?.servers?.wtenv;
-    const currentRoutes = currentServer?.routes ?? [];
-    // Preserve the existing listener config; fall back to :443 + :80 if no server yet
-    const listen = currentServer?.listen ?? [":443", ":80"];
-    const filtered = currentRoutes.filter(filterFn);
-    const allRoutes = [...filtered, ...newRoutes];
-    // Collect hostnames that are safe to pre-provision: exact names and single-level
-    // wildcards (*.foo.test). Multi-level wildcards (*.*.foo.test) are deliberately
-    // excluded — Caddy would issue a *.*.foo.test cert which browsers reject (RFC
-    // wildcards only cover one label). Those hostnames fall through to the on-demand
-    // policy instead, which provisions an exact cert per SNI hostname.
-    const singleLevelSubjects = Array.from(new Set(allRoutes.flatMap((r) => r.match.flatMap((m) => (m.host ?? []).filter((h) => (h.match(/\*/g) ?? []).length <= 1)))));
+function buildTlsPolicies(routes) {
+    // Pre-provision certs only for exact names and single-level wildcards (*.foo.test).
+    // Multi-level wildcards (*.*.foo.test) are deliberately excluded — Caddy would issue
+    // a *.*.foo.test cert which browsers reject (RFC wildcards only cover one label).
+    // Those hostnames fall through to the on-demand policy instead.
+    const singleLevelSubjects = Array.from(new Set(routes.flatMap((r) => r.match.flatMap((m) => (m.host ?? []).filter((h) => (h.match(/\*/g) ?? []).length <= 1)))));
+    return [
+        ...(singleLevelSubjects.length > 0
+            ? [{ subjects: singleLevelSubjects, issuers: [{ module: "internal" }] }]
+            : []),
+        // Catch-all on-demand policy: issues an exact cert per SNI hostname for
+        // multi-level subdomains (e.g. pro-company.dev.wavy.test).
+        { issuers: [{ module: "internal" }], on_demand: true },
+    ];
+}
+async function writeConfig(listen, routes) {
     const body = JSON.stringify({
         apps: {
             http: {
                 servers: {
-                    wtenv: {
-                        listen,
-                        routes: allRoutes,
-                    },
+                    wtenv: { listen, routes },
                 },
             },
             tls: {
-                automation: {
-                    policies: [
-                        // Pre-provision certs only for exact names and single-level wildcards.
-                        ...(singleLevelSubjects.length > 0
-                            ? [{ subjects: singleLevelSubjects, issuers: [{ module: "internal" }] }]
-                            : []),
-                        // Catch-all on-demand policy: issues an exact cert per SNI hostname for
-                        // multi-level subdomains (e.g. pro-company.dev.wavy.test). No pre-provisioning
-                        // occurs so the *.*.wavy.test wildcard never enters the cert cache.
-                        { issuers: [{ module: "internal" }], on_demand: true },
-                    ],
-                },
+                automation: { policies: buildTlsPolicies(routes) },
             },
         },
     });
@@ -88,6 +76,14 @@ async function patchRoutes(newRoutes, filterFn) {
     if (status !== 200)
         throw new Error(`Caddy load failed (${status}): ${data}`);
     persistConfig(body);
+}
+async function patchRoutes(newRoutes, filterFn) {
+    const existing = await getConfig();
+    const currentServer = existing?.apps?.http?.servers?.wtenv;
+    const currentRoutes = currentServer?.routes ?? [];
+    const listen = currentServer?.listen ?? [":443", ":80"];
+    const filtered = currentRoutes.filter(filterFn);
+    await writeConfig(listen, [...filtered, ...newRoutes]);
 }
 function buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames) {
     const routes = [];
@@ -160,33 +156,7 @@ function isProjectRoute(host, _projectName, domains) {
 export async function setListener(ports) {
     const existing = await getConfig();
     const currentRoutes = existing?.apps?.http?.servers?.wtenv?.routes ?? [];
-    const body = JSON.stringify({
-        apps: {
-            http: {
-                servers: {
-                    wtenv: {
-                        listen: ports,
-                        routes: currentRoutes,
-                    },
-                },
-            },
-            tls: {
-                automation: {
-                    policies: [{ issuers: [{ module: "internal" }] }],
-                },
-            },
-        },
-    });
-    const { status, data } = await httpRequest({
-        hostname: CADDY_ADMIN_HOST,
-        port: CADDY_ADMIN_PORT,
-        path: "/load",
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
-    }, body);
-    if (status !== 200)
-        throw new Error(`Caddy load failed (${status}): ${data}`);
-    persistConfig(body);
+    await writeConfig(ports, currentRoutes);
 }
 export async function isCaddyRunning() {
     try {
