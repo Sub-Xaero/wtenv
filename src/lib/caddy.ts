@@ -20,9 +20,16 @@ interface CaddyRoute {
 
 interface CaddyTlsPolicy {
   subjects?: string[];
-  issuers: Array<{ module: string }>;
+  issuers: Array<{ module: string; lifetime?: string }>;
   on_demand?: boolean;
 }
+
+// 7d leaf certs. Caddy's default is 12h; longer is fine for local dev and
+// avoids ERR_CERT_DATE_INVALID surprises after a few hours of inactivity.
+// Intermediate is bumped to 30d so Caddy doesn't cap leafs below 7d when
+// the intermediate is near expiry.
+const INTERNAL_CERT_LIFETIME = "168h";
+const INTERNAL_INTERMEDIATE_LIFETIME = "720h";
 
 interface CaddyConfig {
   apps?: {
@@ -37,6 +44,11 @@ interface CaddyConfig {
     tls?: {
       automation?: {
         policies?: CaddyTlsPolicy[];
+      };
+    };
+    pki?: {
+      certificate_authorities?: {
+        local?: { intermediate_lifetime?: string };
       };
     };
   };
@@ -83,13 +95,14 @@ function buildTlsPolicies(routes: CaddyRoute[]): CaddyTlsPolicy[] {
     )
   ));
 
+  const issuer = { module: "internal", lifetime: INTERNAL_CERT_LIFETIME };
   return [
     ...(singleLevelSubjects.length > 0
-      ? [{ subjects: singleLevelSubjects, issuers: [{ module: "internal" }] }]
+      ? [{ subjects: singleLevelSubjects, issuers: [issuer] }]
       : []),
     // Catch-all on-demand policy: issues an exact cert per SNI hostname for
     // multi-level subdomains (e.g. pro-company.dev.wavy.test).
-    { issuers: [{ module: "internal" }], on_demand: true },
+    { issuers: [issuer], on_demand: true },
   ];
 }
 
@@ -103,6 +116,11 @@ async function writeConfig(listen: string[], routes: CaddyRoute[]): Promise<void
       },
       tls: {
         automation: { policies: buildTlsPolicies(routes) },
+      },
+      pki: {
+        certificate_authorities: {
+          local: { intermediate_lifetime: INTERNAL_INTERMEDIATE_LIFETIME },
+        },
       },
     },
   } satisfies CaddyConfig);

@@ -9,6 +9,12 @@ function persistConfig(body) {
     mkdirSync(CADDY_CONFIG_DIR, { recursive: true });
     writeFileSync(CADDY_CONFIG_PATH, body);
 }
+// 7d leaf certs. Caddy's default is 12h; longer is fine for local dev and
+// avoids ERR_CERT_DATE_INVALID surprises after a few hours of inactivity.
+// Intermediate is bumped to 30d so Caddy doesn't cap leafs below 7d when
+// the intermediate is near expiry.
+const INTERNAL_CERT_LIFETIME = "168h";
+const INTERNAL_INTERMEDIATE_LIFETIME = "720h";
 function httpRequest(options, body) {
     return new Promise((resolve, reject) => {
         const req = http.request(options, (res) => {
@@ -44,13 +50,14 @@ function buildTlsPolicies(routes) {
     // a *.*.foo.test cert which browsers reject (RFC wildcards only cover one label).
     // Those hostnames fall through to the on-demand policy instead.
     const singleLevelSubjects = Array.from(new Set(routes.flatMap((r) => r.match.flatMap((m) => (m.host ?? []).filter((h) => (h.match(/\*/g) ?? []).length <= 1)))));
+    const issuer = { module: "internal", lifetime: INTERNAL_CERT_LIFETIME };
     return [
         ...(singleLevelSubjects.length > 0
-            ? [{ subjects: singleLevelSubjects, issuers: [{ module: "internal" }] }]
+            ? [{ subjects: singleLevelSubjects, issuers: [issuer] }]
             : []),
         // Catch-all on-demand policy: issues an exact cert per SNI hostname for
         // multi-level subdomains (e.g. pro-company.dev.wavy.test).
-        { issuers: [{ module: "internal" }], on_demand: true },
+        { issuers: [issuer], on_demand: true },
     ];
 }
 async function writeConfig(listen, routes) {
@@ -63,6 +70,11 @@ async function writeConfig(listen, routes) {
             },
             tls: {
                 automation: { policies: buildTlsPolicies(routes) },
+            },
+            pki: {
+                certificate_authorities: {
+                    local: { intermediate_lifetime: INTERNAL_INTERMEDIATE_LIFETIME },
+                },
             },
         },
     });
