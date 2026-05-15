@@ -105,6 +105,25 @@ export async function setup(opts: SetupOptions = {}): Promise<void> {
   }
   console.log("wtenv one-time setup\n");
 
+  // Offer the sudoers fragment up front. Installing it both primes the sudo
+  // cache and lets the whitelisted register/deregister commands run NOPASSWD
+  // for the remainder of setup (and forever after).
+  if (!existsSync(SUDOERS_FRAGMENT_PATH)) {
+    console.log("Optional: install a sudoers fragment so `wtenv register`/`deregister` run");
+    console.log("without password prompts. Whitelists only the /etc/hosts and /etc/resolver");
+    console.log("edits wtenv needs — see `wtenv setup --install-sudoers` for the exact commands.");
+    if (await promptYN("Install /etc/sudoers.d/wtenv?")) {
+      try {
+        await installSudoers();
+      } catch (err) {
+        console.warn(`  sudoers install failed: ${err instanceof Error ? err.message : err}`);
+      }
+    } else {
+      console.log("  Skipped. Install later with: wtenv setup --install-sudoers");
+    }
+    console.log();
+  }
+
   const sudoRefresh = primeSudoCache();
   try {
     await runSetup();
@@ -195,12 +214,11 @@ async function runSetup(): Promise<void> {
 
   // Flush mDNSResponder cache so the new resolver config is picked up immediately.
   // Without this, stale negative entries cause resolution failures until the cache expires.
-  console.log("  Flushing DNS cache (requires sudo)...");
-  spawnSync(
-    "sudo",
-    ["bash", "-c", "dscacheutil -flushcache && killall -HUP mDNSResponder"],
-    { stdio: "inherit" }
-  );
+  // Invoking the binaries directly (rather than via `bash -c`) keeps them covered by
+  // the WTENV_DNS sudoers alias when the fragment is installed.
+  console.log("  Flushing DNS cache...");
+  spawnSync("sudo", ["/usr/bin/dscacheutil", "-flushcache"], { stdio: "inherit" });
+  spawnSync("sudo", ["/usr/bin/killall", "-HUP", "mDNSResponder"], { stdio: "inherit" });
 
   // --- Caddy ---
 
@@ -356,22 +374,6 @@ done
   spawnSync("launchctl", ["unload", plistPath], { stdio: "ignore" });
   spawnSync("launchctl", ["load", plistPath], { stdio: "ignore" });
   console.log("  Caddy restore agent installed");
-
-  // --- Passwordless sudo (opt-in) ---
-  if (!existsSync(SUDOERS_FRAGMENT_PATH)) {
-    console.log("\nOptional: install a sudoers fragment so `wtenv register`/`deregister` run");
-    console.log("without password prompts. Whitelists only the /etc/hosts and /etc/resolver");
-    console.log("edits wtenv needs — see `wtenv setup --install-sudoers` for the exact commands.");
-    if (await promptYN("Install /etc/sudoers.d/wtenv?")) {
-      try {
-        await installSudoers();
-      } catch (err) {
-        console.warn(`  sudoers install failed: ${err instanceof Error ? err.message : err}`);
-      }
-    } else {
-      console.log("  Skipped. Install later with: wtenv setup --install-sudoers");
-    }
-  }
 
   console.log("\nSetup complete.");
   console.log("Verify DNS: ping -c1 anything.test  — should resolve to 127.0.0.1");
