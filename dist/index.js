@@ -17,9 +17,10 @@ program
 program
     .command("setup")
     .description("One-time macOS setup: dnsmasq, /etc/resolver/test, Caddy CA trust")
-    .action(async () => {
+    .option("--install-sudoers", "Install /etc/sudoers.d/wtenv so register/deregister run without password prompts")
+    .action(async (opts) => {
     try {
-        await setup();
+        await setup({ installSudoers: opts.installSudoers });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);

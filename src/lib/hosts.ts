@@ -1,7 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { requireSudoOrSkip, sudoExec } from "./sudo.js";
 
 const HOSTS_PATH = "/etc/hosts";
+// Stable temp path so the sudoers fragment can whitelist the exact /bin/mv invocation.
+const HOSTS_STAGING = "/var/tmp/wtenv-hosts";
 
 function markers(projectName: string): [string, string] {
   return [`# BEGIN wtenv:${projectName}`, `# END wtenv:${projectName}`];
@@ -21,14 +23,12 @@ function stripBlock(content: string, projectName: string): string {
   return content.replace(re, "\n").replace(/\n{3,}/g, "\n\n");
 }
 
-// Writes /etc/hosts atomically via sudo. Returns true on success.
+// Atomic /etc/hosts write: stage as the unprivileged user, then sudo mv into place.
+// This shape lets the sudoers fragment whitelist a single literal command:
+//   /bin/mv /var/tmp/wtenv-hosts /etc/hosts
 function writeHosts(content: string): boolean {
-  const result = spawnSync(
-    "sudo",
-    ["bash", "-c", `cat > /tmp/wtenv-hosts && mv /tmp/wtenv-hosts ${HOSTS_PATH}`],
-    { input: content, stdio: ["pipe", "inherit", "inherit"] }
-  );
-  return result.status === 0;
+  writeFileSync(HOSTS_STAGING, content, { mode: 0o644 });
+  return sudoExec(["/bin/mv", HOSTS_STAGING, HOSTS_PATH]);
 }
 
 // macOS mDNSResponder intercepts bare 2-label .local queries (e.g. foo.local)
@@ -45,7 +45,8 @@ export function registerHostsEntries(projectName: string, hostnames: string[]): 
   const next = `${stripped}${sep}${block}\n`;
   if (next === current) return;
 
-  console.log(`  Writing /etc/hosts entries for ${hostnames.join(", ")} (requires sudo)...`);
+  if (!requireSudoOrSkip("/etc/hosts update")) return;
+  console.log(`  Writing /etc/hosts entries for ${hostnames.join(", ")}...`);
   if (!writeHosts(next)) {
     console.warn(`  Could not update /etc/hosts — bare .local names will not resolve.`);
   }
@@ -55,7 +56,9 @@ export function deregisterHostsEntries(projectName: string): void {
   const current = readHosts();
   const stripped = stripBlock(current, projectName);
   if (stripped === current) return;
-  console.log(`  Removing /etc/hosts entries (requires sudo)...`);
+
+  if (!requireSudoOrSkip("/etc/hosts cleanup")) return;
+  console.log(`  Removing /etc/hosts entries...`);
   writeHosts(stripped);
 }
 

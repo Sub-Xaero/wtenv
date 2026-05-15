@@ -1,6 +1,8 @@
 import { execSync, spawnSync } from "node:child_process";
 import { writeFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
+import * as readline from "node:readline/promises";
 import { isCaddyRunning, setListener } from "../lib/caddy.js";
 const RESOLVER_PATH = "/etc/resolver/test";
 const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
@@ -40,8 +42,89 @@ function isDnsmasqServingPort53() {
         }
     }
 }
-export async function setup() {
+const SUDOERS_FRAGMENT_PATH = "/etc/sudoers.d/wtenv";
+const SUDOERS_STAGING = "/var/tmp/wtenv-sudoers";
+function buildSudoersFragment(username) {
+    // Whitelists the exact commands wtenv invokes during register/deregister so
+    // headless runs don't trigger password prompts. Domain inputs are validated
+    // in wtenv before reaching sudo, defending the /etc/resolver/* wildcards.
+    return `# Installed by \`wtenv setup --install-sudoers\`. Do not edit by hand.
+Cmnd_Alias WTENV_HOSTS    = /bin/mv /var/tmp/wtenv-hosts /etc/hosts
+Cmnd_Alias WTENV_RESOLVER = /bin/mkdir -p /etc/resolver, \\
+                            /bin/mv /var/tmp/wtenv-resolver-* /etc/resolver/*, \\
+                            /bin/rm -f /etc/resolver/*
+Cmnd_Alias WTENV_DNS      = /usr/bin/dscacheutil -flushcache, \\
+                            /usr/bin/killall -HUP mDNSResponder
+
+${username} ALL=(root) NOPASSWD: WTENV_HOSTS, WTENV_RESOLVER, WTENV_DNS
+`;
+}
+export async function installSudoers() {
+    const username = userInfo().username;
+    const fragment = buildSudoersFragment(username);
+    console.log(`Installing sudoers fragment for ${username} → ${SUDOERS_FRAGMENT_PATH}\n`);
+    writeFileSync(SUDOERS_STAGING, fragment, { mode: 0o440 });
+    // Validate first — visudo -c refuses to apply broken fragments.
+    console.log("  Validating syntax with visudo...");
+    const check = spawnSync("sudo", ["/usr/sbin/visudo", "-c", "-f", SUDOERS_STAGING], { stdio: "inherit" });
+    if (check.status !== 0) {
+        throw new Error("sudoers fragment failed visudo validation — not installing");
+    }
+    // install(1) sets owner+group+mode atomically. This is the one-and-only sudo
+    // prompt the user should see; everything after this runs passwordless.
+    console.log(`  Installing as root:wheel mode 0440 (will prompt for password once)...`);
+    const result = spawnSync("sudo", ["/usr/bin/install", "-m", "0440", "-o", "root", "-g", "wheel", SUDOERS_STAGING, SUDOERS_FRAGMENT_PATH], { stdio: "inherit" });
+    if (result.status !== 0) {
+        throw new Error(`install failed (exit ${result.status})`);
+    }
+    console.log(`\n  Installed. Verify with:  sudo cat ${SUDOERS_FRAGMENT_PATH}`);
+    console.log(`  wtenv register/deregister should now run without password prompts.`);
+}
+async function promptYN(question) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY)
+        return false;
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+        const answer = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
+        return answer === "y" || answer === "yes";
+    }
+    finally {
+        rl.close();
+    }
+}
+// Prime sudo's credential cache so the many sudo calls in setup() don't each prompt.
+// `sudo -v` updates the timestamp (5 min default). We also fire a background refresh
+// every 60s so long-running steps (brew install, launchctl reloads) don't time out.
+function primeSudoCache() {
+    if (!process.stdin.isTTY)
+        return null;
+    console.log("Caching sudo credentials (you'll be prompted once)...");
+    const result = spawnSync("sudo", ["-v"], { stdio: "inherit" });
+    if (result.status !== 0) {
+        console.warn("  sudo -v failed — you may be prompted multiple times during setup.\n");
+        return null;
+    }
+    console.log();
+    return setInterval(() => {
+        spawnSync("sudo", ["-n", "-v"], { stdio: "ignore" });
+    }, 60_000).unref();
+}
+export async function setup(opts = {}) {
+    if (opts.installSudoers) {
+        await installSudoers();
+        return;
+    }
     console.log("wtenv one-time setup\n");
+    const sudoRefresh = primeSudoCache();
+    try {
+        await runSetup();
+    }
+    finally {
+        if (sudoRefresh)
+            clearInterval(sudoRefresh);
+    }
+}
+async function runSetup() {
     // --- dnsmasq ---
     const dnsmasqInstalled = spawnSync("which", ["dnsmasq"], { stdio: "pipe" }).status === 0;
     if (!dnsmasqInstalled) {
@@ -240,6 +323,23 @@ done
     spawnSync("launchctl", ["unload", plistPath], { stdio: "ignore" });
     spawnSync("launchctl", ["load", plistPath], { stdio: "ignore" });
     console.log("  Caddy restore agent installed");
+    // --- Passwordless sudo (opt-in) ---
+    if (!existsSync(SUDOERS_FRAGMENT_PATH)) {
+        console.log("\nOptional: install a sudoers fragment so `wtenv register`/`deregister` run");
+        console.log("without password prompts. Whitelists only the /etc/hosts and /etc/resolver");
+        console.log("edits wtenv needs — see `wtenv setup --install-sudoers` for the exact commands.");
+        if (await promptYN("Install /etc/sudoers.d/wtenv?")) {
+            try {
+                await installSudoers();
+            }
+            catch (err) {
+                console.warn(`  sudoers install failed: ${err instanceof Error ? err.message : err}`);
+            }
+        }
+        else {
+            console.log("  Skipped. Install later with: wtenv setup --install-sudoers");
+        }
+    }
     console.log("\nSetup complete.");
     console.log("Verify DNS: ping -c1 anything.test  — should resolve to 127.0.0.1");
 }

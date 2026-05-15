@@ -1,11 +1,38 @@
 import { writeFileSync, unlinkSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { execSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { requireSudoOrSkip, sudoExec } from "./sudo.js";
 
 const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
+// Domain-name regex used to defend the sudoers wildcards in /etc/resolver/*.
+// Restrict to plain DNS labels; rejects path traversal and shell-meaningful chars.
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
 
 function confPath(name: string): string {
   return join(DNSMASQ_CONF_DIR, `${name}.conf`);
+}
+
+function stagingPath(domain: string): string {
+  // Stable per-domain path so sudoers can whitelist `/bin/mv /var/tmp/wtenv-resolver-* /etc/resolver/*`.
+  return `/var/tmp/wtenv-resolver-${domain}`;
+}
+
+// Write /etc/resolver/<domain> via stage-then-sudo-mv, so the only privileged
+// commands are `/bin/mkdir -p /etc/resolver` and `/bin/mv /var/tmp/wtenv-resolver-* /etc/resolver/*`.
+function installResolverFile(domain: string): boolean {
+  if (!DOMAIN_RE.test(domain)) {
+    console.warn(`  Refusing to write /etc/resolver/${domain} — domain name failed validation`);
+    return false;
+  }
+  const staging = stagingPath(domain);
+  writeFileSync(staging, "nameserver 127.0.0.1\nport 5300\noptions use-vc\n", { mode: 0o644 });
+  if (!sudoExec(["/bin/mkdir", "-p", "/etc/resolver"])) return false;
+  return sudoExec(["/bin/mv", staging, `/etc/resolver/${domain}`]);
+}
+
+function removeResolverFile(domain: string): boolean {
+  if (!DOMAIN_RE.test(domain)) return false;
+  return sudoExec(["/bin/rm", "-f", `/etc/resolver/${domain}`]);
 }
 
 export function registerDnsmasq(worktreeName: string, tld: string): void {
@@ -26,19 +53,14 @@ export function registerDnsmasq(worktreeName: string, tld: string): void {
   // This is the path .local TLDs take: we deliberately don't create /etc/resolver/local
   // globally because it would shadow Bonjour for every .local name on the machine.
   const resolverPath = `/etc/resolver/${domain}`;
-  const resolverContent = "nameserver 127.0.0.1\nport 5300\noptions use-vc\n";
-  const existing = existsSync(resolverPath) ? readFileSync(resolverPath, "utf8") : "";
-  if (existing.trim() === resolverContent.trim()) return;
+  const expected = "nameserver 127.0.0.1\nport 5300\noptions use-vc\n";
+  if (existsSync(resolverPath) && readFileSync(resolverPath, "utf8").trim() === expected.trim()) return;
 
-  const result = spawnSync(
-    "sudo",
-    ["bash", "-c", `mkdir -p /etc/resolver && printf 'nameserver 127.0.0.1\\nport 5300\\noptions use-vc\\n' > ${resolverPath}`],
-    { stdio: "inherit" }
-  );
-  if (result.status !== 0) {
-    console.warn(`  Could not create ${resolverPath} — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\\\nport 5300\\\\noptions use-vc\\\\n' > ${resolverPath}"`);
-  } else {
+  if (!requireSudoOrSkip(`/etc/resolver/${domain} write`)) return;
+  if (installResolverFile(domain)) {
     flushDnsCache();
+  } else {
+    console.warn(`  Could not create /etc/resolver/${domain} — DNS for *.${domain} may not work.`);
   }
 }
 
@@ -51,9 +73,11 @@ export function deregisterDnsmasq(worktreeName: string, tld?: string): void {
 
   // Remove per-worktree resolver file if we created one
   if (tld && !existsSync(`/etc/resolver/${tld}`)) {
-    const resolverPath = `/etc/resolver/${worktreeName}.${tld}`;
+    const domain = `${worktreeName}.${tld}`;
+    const resolverPath = `/etc/resolver/${domain}`;
     if (existsSync(resolverPath)) {
-      spawnSync("sudo", ["rm", resolverPath], { stdio: "inherit" });
+      if (!requireSudoOrSkip(`/etc/resolver/${domain} cleanup`)) return;
+      removeResolverFile(domain);
     }
   }
 }
@@ -77,19 +101,14 @@ export function registerProjectDnsmasq(projectName: string, baseDomain: string):
   }
 
   const resolverPath = `/etc/resolver/${baseDomain}`;
-  const resolverContent = "nameserver 127.0.0.1\nport 5300\noptions use-vc\n";
-  const existing = existsSync(resolverPath) ? readFileSync(resolverPath, "utf8") : "";
-  if (existing.trim() !== resolverContent.trim()) {
-    const result = spawnSync(
-      "sudo",
-      ["bash", "-c", `mkdir -p /etc/resolver && printf 'nameserver 127.0.0.1\\nport 5300\\noptions use-vc\\n' > ${resolverPath}`],
-      { stdio: "inherit" }
-    );
-    if (result.status !== 0) {
-      console.warn(`  Could not create ${resolverPath} — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\\\nport 5300\\\\noptions use-vc\\\\n' > ${resolverPath}"`);
-    } else {
-      flushDnsCache();
-    }
+  const expected = "nameserver 127.0.0.1\nport 5300\noptions use-vc\n";
+  if (existsSync(resolverPath) && readFileSync(resolverPath, "utf8").trim() === expected.trim()) return;
+
+  if (!requireSudoOrSkip(`/etc/resolver/${baseDomain} write`)) return;
+  if (installResolverFile(baseDomain)) {
+    flushDnsCache();
+  } else {
+    console.warn(`  Could not create /etc/resolver/${baseDomain} — DNS for *.${baseDomain} may not work.`);
   }
 }
 
@@ -105,7 +124,8 @@ export function deregisterProjectDnsmasq(projectName: string, baseDomain: string
 
   const resolverPath = `/etc/resolver/${baseDomain}`;
   if (existsSync(resolverPath)) {
-    spawnSync("sudo", ["rm", resolverPath], { stdio: "inherit" });
+    if (!requireSudoOrSkip(`/etc/resolver/${baseDomain} cleanup`)) return;
+    removeResolverFile(baseDomain);
   }
 }
 
@@ -119,8 +139,8 @@ export function isDnsmasqRunning(): boolean {
 }
 
 function flushDnsCache(): void {
-  spawnSync("sudo", ["dscacheutil", "-flushcache"], { stdio: "ignore" });
-  spawnSync("sudo", ["killall", "-HUP", "mDNSResponder"], { stdio: "ignore" });
+  sudoExec(["/usr/bin/dscacheutil", "-flushcache"], { stdio: "ignore" });
+  sudoExec(["/usr/bin/killall", "-HUP", "mDNSResponder"], { stdio: "ignore" });
 }
 
 function reloadDnsmasq(): void {
