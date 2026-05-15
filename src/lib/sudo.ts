@@ -41,3 +41,21 @@ export function sudoExec(argv: string[], opts: { stdio?: "inherit" | "ignore" | 
   const result = spawnSync("sudo", ["-n", ...argv], { stdio: opts.stdio ?? "inherit" });
   return result.status === 0;
 }
+
+// Prime sudo's credential cache so a sequence of sudo calls in the same command
+// doesn't repeatedly prompt. Pairs with a 60s background refresh interval so long
+// operations (brew install, launchctl reloads) don't hit the 5-minute timeout.
+// Returns the interval handle (or null) so the caller can clearInterval in finally.
+export function primeSudoCache(): NodeJS.Timeout | null {
+  if (!process.stdin.isTTY) return null;
+  console.log("Caching sudo credentials (you'll be prompted once)...");
+  const result = spawnSync("sudo", ["-v"], { stdio: "inherit" });
+  if (result.status !== 0) {
+    console.warn("  sudo -v failed — you may be prompted multiple times.\n");
+    return null;
+  }
+  console.log();
+  return setInterval(() => {
+    spawnSync("sudo", ["-n", "-v"], { stdio: "ignore" });
+  }, 60_000).unref();
+}

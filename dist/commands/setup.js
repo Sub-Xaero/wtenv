@@ -2,8 +2,9 @@ import { execSync, spawnSync } from "node:child_process";
 import { writeFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
-import * as readline from "node:readline/promises";
 import { isCaddyRunning, setListener } from "../lib/caddy.js";
+import { promptYN } from "../lib/prompt.js";
+import { primeSudoCache } from "../lib/sudo.js";
 const RESOLVER_PATH = "/etc/resolver/test";
 const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
 const DNSMASQ_CONF = "/opt/homebrew/etc/dnsmasq.conf";
@@ -79,35 +80,6 @@ export async function installSudoers() {
     }
     console.log(`\n  Installed. Verify with:  sudo cat ${SUDOERS_FRAGMENT_PATH}`);
     console.log(`  wtenv register/deregister should now run without password prompts.`);
-}
-async function promptYN(question) {
-    if (!process.stdin.isTTY || !process.stdout.isTTY)
-        return false;
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    try {
-        const answer = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
-        return answer === "y" || answer === "yes";
-    }
-    finally {
-        rl.close();
-    }
-}
-// Prime sudo's credential cache so the many sudo calls in setup() don't each prompt.
-// `sudo -v` updates the timestamp (5 min default). We also fire a background refresh
-// every 60s so long-running steps (brew install, launchctl reloads) don't time out.
-function primeSudoCache() {
-    if (!process.stdin.isTTY)
-        return null;
-    console.log("Caching sudo credentials (you'll be prompted once)...");
-    const result = spawnSync("sudo", ["-v"], { stdio: "inherit" });
-    if (result.status !== 0) {
-        console.warn("  sudo -v failed — you may be prompted multiple times during setup.\n");
-        return null;
-    }
-    console.log();
-    return setInterval(() => {
-        spawnSync("sudo", ["-n", "-v"], { stdio: "ignore" });
-    }, 60_000).unref();
 }
 export async function setup(opts = {}) {
     if (opts.installSudoers) {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { setup } from "./commands/setup.js";
+import { teardown } from "./commands/teardown.js";
 import { init } from "./commands/init.js";
 import { register } from "./commands/register.js";
 import { deregister } from "./commands/deregister.js";
@@ -24,6 +25,18 @@ program
   .action(async (opts: { installSudoers?: boolean }) => {
     try {
       await setup({ installSudoers: opts.installSudoers });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("teardown")
+  .description("Undo `wtenv setup`: remove Caddy daemon, dnsmasq config, /etc/resolver/test, sudoers fragment")
+  .action(async () => {
+    try {
+      await teardown();
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);
