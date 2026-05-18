@@ -1,7 +1,22 @@
 import { readFileSync, existsSync } from "node:fs";
+import { register } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defaultPlugins, postgres } from "./plugins.js";
+
+let wtenvResolverRegistered = false;
+
+// Register an ESM resolver hook so `.wtenv.config.js` files can
+// `import ... from "wtenv"` without the consuming project needing wtenv in
+// its node_modules / package.json. The hook maps the bare specifier
+// "wtenv" to this package's own exports.js.
+function ensureWtenvResolver(): void {
+  if (wtenvResolverRegistered) return;
+  const loaderUrl = new URL("./config-loader.js", import.meta.url);
+  const wtenvUrl = new URL("./exports.js", import.meta.url).href;
+  register(loaderUrl, { data: { wtenvUrl } });
+  wtenvResolverRegistered = true;
+}
 
 export interface ServiceConfig {
   hostname: string;
@@ -69,6 +84,7 @@ export async function loadConfig(configRoot: string = process.cwd()): Promise<Wt
   // Try .wtenv.config.js first (Vite-style JS config)
   const jsConfigPath = join(configRoot, ".wtenv.config.js");
   if (existsSync(jsConfigPath)) {
+    ensureWtenvResolver();
     const mod = await import(pathToFileURL(jsConfigPath).href);
     const raw: WtenvConfig = mod.default ?? mod;
     return normalizeConfig(raw, false);

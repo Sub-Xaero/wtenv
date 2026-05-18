@@ -31,11 +31,24 @@ npm run build
 npm link        # installs wtenv as a global command
 ```
 
-Then in each project that uses wtenv as a config import:
+You don't need to add `wtenv` to each consuming project's `package.json` or run `npm link wtenv` inside it — `.wtenv.config.js` can `import ... from "wtenv"` directly. wtenv's CLI registers an ESM resolver hook that maps the bare `"wtenv"` specifier to the globally-linked package before importing the config.
 
-```bash
-npm link wtenv
+### Editor type resolution (optional)
+
+The runtime works without any project-side setup, but editors won't resolve types for `import ... from "wtenv"` unless you point them at the linked package. Add a `jsconfig.json` (or extend an existing `tsconfig.json`) at the project root:
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "wtenv": ["./node_modules/wtenv/dist/lib/exports.d.ts"]
+    }
+  }
+}
 ```
+
+…then run `npm link wtenv` once in the project to create the `node_modules/wtenv` symlink the editor reads. This is editor-only — it doesn't touch `package.json` or the lockfile.
 
 ## One-time setup
 
