@@ -2,129 +2,199 @@ import Database from "better-sqlite3";
 import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { BUNDLED_CITIES } from "./cities.js";
 
 const DB_DIR = join(homedir(), ".wtenv");
 const DB_PATH = join(DB_DIR, "registry.db");
 
 export interface Worktree {
-  name: string;
-  project_root: string;
+  id: string;            // stable identifier (worktree git-dir absolute path)
+  name: string;          // display name (worktree directory basename at register time)
+  city: string;          // checked-out city — used as DNS domain
+  project_root: string;  // worktree cwd at register time
   created_at: number;
 }
 
 export interface PortAssignment {
-  worktree_name: string;
+  worktree_id: string;
   service_name: string;
   port: number;
+}
+
+export interface AllocateOptions {
+  cityHint?: string;
 }
 
 function openDb(): Database.Database {
   if (!existsSync(DB_DIR)) mkdirSync(DB_DIR, { recursive: true });
   const db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS worktrees (
-      name        TEXT PRIMARY KEY,
-      project_root TEXT NOT NULL,
-      created_at  INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS port_assignments (
-      worktree_name TEXT NOT NULL,
-      service_name  TEXT NOT NULL,
-      port          INTEGER NOT NULL UNIQUE,
-      PRIMARY KEY (worktree_name, service_name)
-    );
-  `);
+  db.pragma("foreign_keys = ON");
+  migrate(db);
   return db;
 }
 
-export function allocatePorts(
-  worktreeName: string,
+// Drop legacy v1 schema (name-keyed, no city column) and recreate. v1 is
+// unsalvageable: conductor renames worktree directories so the name primary
+// key gets stale, which is the whole reason we're switching to a git-dir id.
+function migrate(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(worktrees)").all() as { name: string }[];
+  const hasNewSchema = cols.some((c) => c.name === "id") && cols.some((c) => c.name === "city");
+  if (cols.length > 0 && !hasNewSchema) {
+    console.warn("wtenv: registry schema upgrade — clearing legacy worktrees. Re-run `wtenv register` in each worktree.");
+    db.exec(`
+      DROP TABLE IF EXISTS port_assignments;
+      DROP TABLE IF EXISTS worktrees;
+    `);
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS worktrees (
+      id            TEXT PRIMARY KEY,
+      name          TEXT NOT NULL,
+      city          TEXT NOT NULL UNIQUE,
+      project_root  TEXT NOT NULL,
+      created_at    INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS port_assignments (
+      worktree_id   TEXT NOT NULL,
+      service_name  TEXT NOT NULL,
+      port          INTEGER NOT NULL UNIQUE,
+      PRIMARY KEY (worktree_id, service_name),
+      FOREIGN KEY (worktree_id) REFERENCES worktrees(id) ON DELETE CASCADE
+    );
+  `);
+}
+
+function pickCity(db: Database.Database, hint?: string): string {
+  const takenRows = db.prepare("SELECT city FROM worktrees").all() as { city: string }[];
+  const taken = new Set(takenRows.map((r) => r.city));
+  if (hint && !taken.has(hint)) return hint;
+  for (const candidate of BUNDLED_CITIES) {
+    if (!taken.has(candidate)) return candidate;
+  }
+  throw new Error(
+    `City pool exhausted (${BUNDLED_CITIES.length} cities, ${taken.size} taken). ` +
+      `Deregister an unused worktree or extend src/lib/cities.ts.`
+  );
+}
+
+export interface AllocationResult {
+  city: string;
+  ports: Record<string, number>;
+}
+
+export function allocateWorktree(
+  id: string,
+  name: string,
   projectRoot: string,
   services: string[],
-  portRange: [number, number]
-): Record<string, number> {
+  portRange: [number, number],
+  options: AllocateOptions = {}
+): AllocationResult {
   const db = openDb();
-
-  const existing = db
-    .prepare("SELECT name FROM worktrees WHERE name = ?")
-    .get(worktreeName);
-  if (existing) {
-    throw new Error(`Worktree '${worktreeName}' is already registered. Run 'wtenv deregister ${worktreeName}' first.`);
-  }
-
-  const usedPorts = new Set<number>(
-    (db.prepare("SELECT port FROM port_assignments").all() as { port: number }[]).map(
-      (r) => r.port
-    )
-  );
-
-  const assignments: Record<string, number> = {};
-  let next = portRange[0];
-
-  for (const service of services) {
-    while (usedPorts.has(next)) next++;
-    if (next > portRange[1]) {
-      throw new Error(`Port range ${portRange[0]}–${portRange[1]} exhausted.`);
+  try {
+    const existing = db
+      .prepare("SELECT id FROM worktrees WHERE id = ?")
+      .get(id);
+    if (existing) {
+      throw new Error(`Worktree at '${id}' is already registered. Run 'wtenv deregister' first.`);
     }
-    assignments[service] = next;
-    usedPorts.add(next);
-    next++;
-  }
 
-  const insertWorktree = db.prepare(
-    "INSERT INTO worktrees (name, project_root, created_at) VALUES (?, ?, ?)"
-  );
-  const insertPort = db.prepare(
-    "INSERT INTO port_assignments (worktree_name, service_name, port) VALUES (?, ?, ?)"
-  );
+    const city = pickCity(db, options.cityHint);
 
-  db.transaction(() => {
-    insertWorktree.run(worktreeName, projectRoot, Date.now());
-    for (const [service, port] of Object.entries(assignments)) {
-      insertPort.run(worktreeName, service, port);
+    const usedPorts = new Set<number>(
+      (db.prepare("SELECT port FROM port_assignments").all() as { port: number }[]).map(
+        (r) => r.port
+      )
+    );
+
+    const assignments: Record<string, number> = {};
+    let next = portRange[0];
+    for (const service of services) {
+      while (usedPorts.has(next)) next++;
+      if (next > portRange[1]) {
+        throw new Error(`Port range ${portRange[0]}–${portRange[1]} exhausted.`);
+      }
+      assignments[service] = next;
+      usedPorts.add(next);
+      next++;
     }
-  })();
 
-  db.close();
-  return assignments;
+    const insertWorktree = db.prepare(
+      "INSERT INTO worktrees (id, name, city, project_root, created_at) VALUES (?, ?, ?, ?, ?)"
+    );
+    const insertPort = db.prepare(
+      "INSERT INTO port_assignments (worktree_id, service_name, port) VALUES (?, ?, ?)"
+    );
+    db.transaction(() => {
+      insertWorktree.run(id, name, city, projectRoot, Date.now());
+      for (const [service, port] of Object.entries(assignments)) {
+        insertPort.run(id, service, port);
+      }
+    })();
+
+    return { city, ports: assignments };
+  } finally {
+    db.close();
+  }
 }
 
-export function releasePorts(worktreeName: string): void {
+export function releaseWorktree(id: string): void {
   const db = openDb();
-  db.transaction(() => {
-    db.prepare("DELETE FROM port_assignments WHERE worktree_name = ?").run(worktreeName);
-    db.prepare("DELETE FROM worktrees WHERE name = ?").run(worktreeName);
-  })();
-  db.close();
+  try {
+    // ON DELETE CASCADE cleans up port_assignments
+    db.prepare("DELETE FROM worktrees WHERE id = ?").run(id);
+  } finally {
+    db.close();
+  }
 }
 
-export function getWorktreePorts(worktreeName: string): Record<string, number> {
+export function getWorktree(id: string): Worktree | null {
   const db = openDb();
-  const rows = db
-    .prepare("SELECT service_name, port FROM port_assignments WHERE worktree_name = ?")
-    .all(worktreeName) as { service_name: string; port: number }[];
-  db.close();
-  return Object.fromEntries(rows.map((r) => [r.service_name, r.port]));
+  try {
+    const row = db.prepare("SELECT * FROM worktrees WHERE id = ?").get(id) as Worktree | undefined;
+    return row ?? null;
+  } finally {
+    db.close();
+  }
+}
+
+export function getWorktreePorts(id: string): Record<string, number> {
+  const db = openDb();
+  try {
+    const rows = db
+      .prepare("SELECT service_name, port FROM port_assignments WHERE worktree_id = ?")
+      .all(id) as { service_name: string; port: number }[];
+    return Object.fromEntries(rows.map((r) => [r.service_name, r.port]));
+  } finally {
+    db.close();
+  }
 }
 
 export function listWorktrees(): Array<Worktree & { ports: Record<string, number> }> {
   const db = openDb();
-  const worktrees = db.prepare("SELECT * FROM worktrees ORDER BY created_at DESC").all() as Worktree[];
-  const result = worktrees.map((wt) => {
-    const ports = db
-      .prepare("SELECT service_name, port FROM port_assignments WHERE worktree_name = ?")
-      .all(wt.name) as { service_name: string; port: number }[];
-    return { ...wt, ports: Object.fromEntries(ports.map((p) => [p.service_name, p.port])) };
-  });
-  db.close();
-  return result;
+  try {
+    const worktrees = db
+      .prepare("SELECT * FROM worktrees ORDER BY created_at DESC")
+      .all() as Worktree[];
+    return worktrees.map((wt) => {
+      const ports = db
+        .prepare("SELECT service_name, port FROM port_assignments WHERE worktree_id = ?")
+        .all(wt.id) as { service_name: string; port: number }[];
+      return { ...wt, ports: Object.fromEntries(ports.map((p) => [p.service_name, p.port])) };
+    });
+  } finally {
+    db.close();
+  }
 }
 
-export function isRegistered(worktreeName: string): boolean {
+export function isRegistered(id: string): boolean {
   const db = openDb();
-  const row = db.prepare("SELECT name FROM worktrees WHERE name = ?").get(worktreeName);
-  db.close();
-  return row !== undefined;
+  try {
+    const row = db.prepare("SELECT id FROM worktrees WHERE id = ?").get(id);
+    return row !== undefined;
+  } finally {
+    db.close();
+  }
 }

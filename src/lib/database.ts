@@ -6,12 +6,14 @@ import type { DatabaseConfig } from "./config.js";
 
 export type { DatabaseConfig };
 
-function sanitizeName(worktreeName: string): string {
-  return worktreeName.replace(/-/g, "_");
+function sanitizeName(name: string): string {
+  return name.replace(/-/g, "_");
 }
 
-function databaseName(config: DatabaseConfig, worktreeName: string): string {
-  return config.namePattern.replace("{worktree}", sanitizeName(worktreeName));
+function databaseName(config: DatabaseConfig, city: string): string {
+  const sanitized = sanitizeName(city);
+  // {worktree} kept as a legacy alias so older configs keep working.
+  return config.namePattern.replace(/\{(city|worktree)\}/g, sanitized);
 }
 
 function databaseUrl(config: DatabaseConfig, dbName: string): string {
@@ -22,8 +24,8 @@ function pgEnv(config: DatabaseConfig): NodeJS.ProcessEnv {
   return { ...process.env, PGPASSWORD: config.password };
 }
 
-export function provisionDatabase(worktreeName: string, config: DatabaseConfig): string {
-  const dbName = databaseName(config, worktreeName);
+export function provisionDatabase(city: string, config: DatabaseConfig): string {
+  const dbName = databaseName(config, city);
   const env = pgEnv(config);
 
   const createResult = spawnSync(
@@ -67,8 +69,8 @@ export function provisionDatabase(worktreeName: string, config: DatabaseConfig):
   return databaseUrl(config, dbName);
 }
 
-export function teardownDatabase(worktreeName: string, config: DatabaseConfig): void {
-  const dbName = databaseName(config, worktreeName);
+export function teardownDatabase(city: string, config: DatabaseConfig): void {
+  const dbName = databaseName(config, city);
 
   const result = spawnSync(
     "dropdb",
@@ -84,6 +86,6 @@ export function teardownDatabase(worktreeName: string, config: DatabaseConfig): 
   }
 }
 
-export function buildDatabaseUrl(worktreeName: string, config: DatabaseConfig): string {
-  return databaseUrl(config, databaseName(config, worktreeName));
+export function buildDatabaseUrl(city: string, config: DatabaseConfig): string {
+  return databaseUrl(config, databaseName(config, city));
 }

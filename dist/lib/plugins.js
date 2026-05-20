@@ -5,7 +5,10 @@ import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
 import { registerCaddy, deregisterCaddy } from "./caddy.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./mdns.js";
 import { provisionDatabase, teardownDatabase } from "./database.js";
-import { allocatePorts, releasePorts } from "./registry.js";
+import { allocateWorktree, releaseWorktree } from "./registry.js";
+// Allocates the worktree's registry row, including a checked-out city from the
+// bundled pool and per-service ports. Also seeds `ctx.city` and exports
+// `WTENV_CITY` so downstream plugins (and the consuming app) can read it.
 export function ports(options) {
     const portRange = options?.portRange ?? [3100, 4099];
     return {
@@ -13,11 +16,13 @@ export function ports(options) {
         portRange,
         onRegister(ctx) {
             const serviceNames = Object.keys(ctx.config.services);
-            const allocated = allocatePorts(ctx.worktreeName, ctx.cwd, serviceNames, portRange);
+            const { city, ports: allocated } = allocateWorktree(ctx.worktreeId, ctx.worktreeName, ctx.cwd, serviceNames, portRange);
+            ctx.city = city;
             Object.assign(ctx.ports, allocated);
+            ctx.envVars.WTENV_CITY = city;
         },
         onDeregister(ctx) {
-            releasePorts(ctx.worktreeName);
+            releaseWorktree(ctx.worktreeId);
         },
     };
 }
@@ -25,16 +30,16 @@ export function dns() {
     return {
         name: "wtenv:dns",
         onRegister(ctx) {
-            registerDnsmasq(ctx.worktreeName, ctx.config.tld);
+            registerDnsmasq(ctx.city, ctx.config.tld);
             // For tld: 'local', also publish the bare 2-label name via mDNS since /etc/resolver
             // files don't intercept bare .local queries before mDNSResponder.
-            const bareLocals = bareLocalHostnames(`${ctx.worktreeName}.${ctx.config.tld}`, []);
+            const bareLocals = bareLocalHostnames(`${ctx.city}.${ctx.config.tld}`, []);
             if (bareLocals.length > 0)
-                registerMdnsHosts(ctx.worktreeName, bareLocals);
+                registerMdnsHosts(ctx.city, bareLocals);
         },
         onDeregister(ctx) {
-            deregisterMdnsHosts(ctx.worktreeName);
-            deregisterDnsmasq(ctx.worktreeName, ctx.config.tld);
+            deregisterMdnsHosts(ctx.city);
+            deregisterDnsmasq(ctx.city, ctx.config.tld);
         },
     };
 }
@@ -43,10 +48,10 @@ export function caddy() {
         name: "wtenv:caddy",
         async onRegister(ctx) {
             const serviceHostnames = Object.fromEntries(Object.entries(ctx.config.services).map(([name, cfg]) => [name, cfg.hostname]));
-            await registerCaddy(ctx.worktreeName, ctx.config.tld, ctx.ports, serviceHostnames);
+            await registerCaddy(ctx.city, ctx.config.tld, ctx.ports, serviceHostnames);
         },
         async onDeregister(ctx) {
-            await deregisterCaddy(ctx.worktreeName, ctx.config.tld);
+            await deregisterCaddy(ctx.city, ctx.config.tld);
         },
     };
 }
@@ -59,11 +64,12 @@ export function serviceEnv() {
                 if (port === undefined || !cfg.env)
                     continue;
                 const hostname = cfg.hostname === "*" ? "" : cfg.hostname;
-                const domain = `${ctx.worktreeName}.${ctx.config.tld}`;
+                const domain = `${ctx.city}.${ctx.config.tld}`;
                 const fqdn = hostname ? `${hostname}.${domain}` : domain;
                 const vars = {
                     port: String(port),
                     worktree: ctx.worktreeName,
+                    city: ctx.city,
                     tld: ctx.config.tld,
                     hostname,
                     domain,
@@ -145,11 +151,11 @@ export function postgres(options) {
     return {
         name: "wtenv:postgres",
         onRegister(ctx) {
-            const dbUrl = provisionDatabase(ctx.worktreeName, options);
+            const dbUrl = provisionDatabase(ctx.city, options);
             ctx.envVars[options.envVar] = dbUrl;
         },
         onDeregister(ctx) {
-            teardownDatabase(ctx.worktreeName, options);
+            teardownDatabase(ctx.city, options);
         },
     };
 }

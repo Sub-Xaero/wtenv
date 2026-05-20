@@ -1,22 +1,29 @@
 import { unlinkSync, existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { loadConfig } from "../lib/config.js";
-import { isRegistered } from "../lib/registry.js";
-import { worktreeRoot, gitRoot } from "../lib/git.js";
+import { getWorktree, getWorktreePorts } from "../lib/registry.js";
+import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
 export async function deregister(name, opts = {}) {
     const cwd = opts.cwd ?? worktreeRoot() ?? process.cwd();
     const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
-    const worktreeName = name ?? basename(cwd);
-    if (!isRegistered(worktreeName)) {
-        console.error(`Worktree '${worktreeName}' is not registered.`);
+    const id = opts.id ?? worktreeId(cwd);
+    if (!id) {
+        throw new Error(`Could not determine git-dir for ${cwd} — run inside a git worktree.`);
+    }
+    const wt = getWorktree(id);
+    if (!wt) {
+        console.error(`No registered worktree found at '${cwd}'.`);
         process.exit(1);
     }
+    const worktreeName = name ?? wt.name;
     const config = await loadConfig(configRoot);
     const ctx = {
+        worktreeId: id,
         worktreeName,
+        city: wt.city,
         cwd,
         configRoot,
-        ports: {},
+        ports: getWorktreePorts(id),
         envVars: {},
         config,
     };
@@ -27,5 +34,5 @@ export async function deregister(name, opts = {}) {
     if (existsSync(envFilePath)) {
         unlinkSync(envFilePath);
     }
-    console.log(`Deregistered worktree '${worktreeName}'`);
+    console.log(`Deregistered worktree '${worktreeName}' (${wt.city}.${config.tld})`);
 }

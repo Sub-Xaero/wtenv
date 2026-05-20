@@ -22,3 +22,14 @@ export function gitRoot(cwd = process.cwd()): string | null {
     return null;
   }
 }
+
+// Stable identifier for a worktree. For the main checkout it's `<repo>/.git`;
+// for linked worktrees it's `<main>/.git/worktrees/<id>`. Git itself manages
+// this path, so it survives directory renames (which conductor does).
+export function worktreeId(cwd = process.cwd()): string | null {
+  try {
+    return execSync("git rev-parse --absolute-git-dir", { cwd, stdio: "pipe" }).toString().trim();
+  } catch {
+    return null;
+  }
+}

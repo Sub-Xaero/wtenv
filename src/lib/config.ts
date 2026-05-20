@@ -51,7 +51,9 @@ export interface Plugin {
 }
 
 export interface PluginContext {
-  worktreeName: string;
+  worktreeId: string;     // stable identifier (worktree git-dir absolute path)
+  worktreeName: string;   // display name (cwd basename — may change if the directory is renamed)
+  city: string;           // checked-out city, used as DNS domain ({city}.{tld})
   cwd: string;
   configRoot: string;
   ports: Record<string, number>;

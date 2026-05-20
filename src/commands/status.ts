@@ -23,7 +23,7 @@ export async function status(): Promise<void> {
   const worktrees = listWorktrees();
   const probeWorktree = worktrees[0];
   if (probeWorktree) {
-    const probeHost = `probe.${probeWorktree.name}.test`;
+    const probeHost = `probe.${probeWorktree.city}.test`;
     try {
       const { address } = await dns.lookup(probeHost);
       check("DNS resolves *.test → 127.0.0.1", address === "127.0.0.1", address);
@@ -41,7 +41,8 @@ export async function status(): Promise<void> {
       const portSummary = Object.entries(wt.ports)
         .map(([s, p]) => `${s}:${p}`)
         .join("  ");
-      console.log(`  ${wt.name.padEnd(24)} ${portSummary}`);
+      const label = `${wt.name} (${wt.city})`;
+      console.log(`  ${label.padEnd(36)} ${portSummary}`);
     }
   }
 }

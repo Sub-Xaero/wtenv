@@ -8,7 +8,7 @@ export async function reset() {
     }
     for (const wt of worktrees) {
         try {
-            await deregister(wt.name, { cwd: wt.project_root });
+            await deregister(wt.name, { id: wt.id, cwd: wt.project_root });
         }
         catch (err) {
             console.error(`Failed to deregister '${wt.name}': ${err instanceof Error ? err.message : err}`);

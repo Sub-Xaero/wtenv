@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { loadConfig } from "../lib/config.js";
 import type { PluginContext } from "../lib/config.js";
 import type { PortsPlugin } from "../lib/plugins.js";
-import { worktreeRoot, gitRoot } from "../lib/git.js";
+import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
 
 interface RegisterOptions {
   cwd?: string;
@@ -18,6 +18,10 @@ export async function register(
 ): Promise<void> {
   const cwd = opts.cwd ?? worktreeRoot() ?? process.cwd();
   const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
+  const id = worktreeId(cwd);
+  if (!id) {
+    throw new Error(`Could not determine git-dir for ${cwd} — run inside a git worktree.`);
+  }
   const worktreeName = name ?? basename(cwd);
   const config = await loadConfig(configRoot);
 
@@ -26,14 +30,14 @@ export async function register(
       | PortsPlugin
       | undefined;
     const [rangeStart] = portsPlugin?.portRange ?? [3100, 4099];
-    console.log(`Dry run for '${worktreeName}'\n  cwd:    ${cwd}\n  config: ${configRoot}\n`);
-    console.log("Would allocate:");
+    console.log(`Dry run for '${worktreeName}'\n  id:     ${id}\n  cwd:    ${cwd}\n  config: ${configRoot}\n`);
+    console.log("Would allocate ports + a city (city assigned at register time):");
     let nextPort = rangeStart;
     for (const [service, cfg] of Object.entries(config.services)) {
       const hostname =
         cfg.hostname === "*"
-          ? `*.${worktreeName}.${config.tld}`
-          : `${cfg.hostname}.${worktreeName}.${config.tld}`;
+          ? `*.<city>.${config.tld}`
+          : `${cfg.hostname}.<city>.${config.tld}`;
       console.log(`  ${service}: port ${nextPort}  →  https://${hostname}`);
       nextPort++;
     }
@@ -42,7 +46,17 @@ export async function register(
   }
 
   const envVars: Record<string, string> = {};
-  const ctx: PluginContext = { worktreeName, cwd, configRoot, ports: {}, envVars, config };
+  // city is populated by the ports plugin during onRegister
+  const ctx: PluginContext = {
+    worktreeId: id,
+    worktreeName,
+    city: "",
+    cwd,
+    configRoot,
+    ports: {},
+    envVars,
+    config,
+  };
 
   const completed: number[] = [];
   try {
@@ -68,14 +82,14 @@ export async function register(
       .join("\n") + "\n"
   );
 
-  console.log(`Registered worktree '${worktreeName}'`);
+  console.log(`Registered worktree '${worktreeName}' as ${ctx.city}.${config.tld}`);
   console.log();
   for (const [service, port] of Object.entries(ctx.ports)) {
     const cfg = config.services[service];
     const hostname =
       cfg.hostname === "*"
-        ? `*.${worktreeName}.${config.tld}`
-        : `${cfg.hostname}.${worktreeName}.${config.tld}`;
+        ? `*.${ctx.city}.${config.tld}`
+        : `${cfg.hostname}.${ctx.city}.${config.tld}`;
     console.log(`  ${service.padEnd(10)} :${port}   https://${hostname}`);
   }
   console.log();

@@ -26,7 +26,9 @@ export interface Plugin {
     onDeregister?(ctx: PluginContext): Promise<void> | void;
 }
 export interface PluginContext {
+    worktreeId: string;
     worktreeName: string;
+    city: string;
     cwd: string;
     configRoot: string;
     ports: Record<string, number>;

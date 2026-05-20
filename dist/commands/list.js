@@ -7,18 +7,33 @@ export async function list() {
         console.log("No worktrees registered.");
         return;
     }
-    const configRoot = gitRoot() ?? process.cwd();
-    const config = await loadConfig(configRoot);
+    // Cache configs by configRoot so we don't re-load the same .wtenv.config.js
+    // once per worktree. Worktrees can span multiple projects.
+    const configCache = new Map();
+    const loadCachedConfig = async (configRoot) => {
+        if (!configCache.has(configRoot)) {
+            try {
+                configCache.set(configRoot, await loadConfig(configRoot));
+            }
+            catch {
+                configCache.set(configRoot, null);
+            }
+        }
+        return configCache.get(configRoot) ?? null;
+    };
     for (const wt of worktrees) {
+        const configRoot = gitRoot(wt.project_root) ?? wt.project_root;
+        const config = await loadCachedConfig(configRoot);
+        const tld = config?.tld ?? "test";
         const age = formatAge(wt.created_at);
-        console.log(`\n${wt.name}  (${age})`);
+        console.log(`\n${wt.name}  →  ${wt.city}.${tld}  (${age})`);
         console.log(`  project: ${wt.project_root}`);
         for (const [service, port] of Object.entries(wt.ports)) {
-            const serviceCfg = config.services[service];
+            const serviceCfg = config?.services[service];
             if (serviceCfg) {
                 const hostname = serviceCfg.hostname === "*"
-                    ? `*.${wt.name}.${config.tld}`
-                    : `${serviceCfg.hostname}.${wt.name}.${config.tld}`;
+                    ? `*.${wt.city}.${tld}`
+                    : `${serviceCfg.hostname}.${wt.city}.${tld}`;
                 console.log(`  ${service.padEnd(10)} :${port}   https://${hostname}`);
             }
             else {

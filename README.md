@@ -7,7 +7,7 @@ Per-worktree DNS namespaces, HTTPS reverse proxying, port allocation, and databa
 When you work across multiple git worktrees (e.g. `main`, `feature/payments`, `fix/auth`), each needs its own ports, local domain, and optionally its own database. wtenv automates all of that through a plugin pipeline defined in a `.wtenv.config.js` at your git root:
 
 - **Port allocation** — assigns unique ports to each service per worktree, no conflicts
-- **DNS** — routes `*.{worktree}.test` to localhost via dnsmasq
+- **DNS** — checks out a city from a bundled pool and routes `*.{city}.test` to localhost via dnsmasq. `WTENV_CITY` is auto-exported so processes can identify their own domain.
 - **HTTPS** — configures Caddy to reverse-proxy each service with a trusted local certificate
 - **File copying** — seeds credentials and config files from the main checkout into each worktree
 - **Database provisioning** — creates and optionally forks an isolated PostgreSQL database per worktree
@@ -81,7 +81,7 @@ export default defineConfig({
       ],
     }),
     postgres({
-      namePattern: 'myapp_development_{worktree}',
+      namePattern: 'myapp_development_{city}',
       forkFrom:    'myapp_development',
       host: 'localhost', port: 5432,
       username: 'myapp', password: 'secret',
@@ -125,13 +125,16 @@ The `env` map on each service supports these template variables:
 | Variable | Value |
 |---|---|
 | `{port}` | Allocated port number |
-| `{worktree}` | Worktree name (e.g. `almaty`) |
+| `{worktree}` | Display name (worktree directory basename — may be unstable if conductor renames the directory) |
+| `{city}` | Checked-out city from the bundled pool — also auto-exported as `WTENV_CITY` |
 | `{tld}` | Configured TLD (e.g. `test`) |
-| `{domain}` | `{worktree}.{tld}` |
+| `{domain}` | `{city}.{tld}` |
 | `{hostname}` | Service's hostname value (empty string for `"*"`) |
 | `{fqdn}` | `{hostname}.{domain}`, or just `{domain}` when hostname is `"*"` |
 
-Example — a service on subdomain `assets` with `worktree=almaty`, `tld=test`, port `3101`:
+`WTENV_CITY` is always written into `.env.worktree` so consuming processes can identify their domain without templating it themselves.
+
+Example — a service on subdomain `assets`, city `almaty`, `tld=test`, port `3101`:
 
 ```js
 env: {
@@ -198,7 +201,7 @@ Both commands read from `.wtenv.config.js` (or `.wtenv.json`) at the git root. P
 | | `wtenv register` | `wtenv project register` |
 |---|---|---|
 | Ports | Dynamically allocated per worktree | Fixed — you specify the port |
-| DNS | `*.{worktree}.{tld}` | `*.{baseDomain}` |
+| DNS | `*.{city}.{tld}` | `*.{baseDomain}` |
 | `.local` support | ✅ yes (sudo on each register) | ✅ yes (sudo on each register) |
 | Intended for | Per-branch environments | Shared/singleton services |
 | Persisted in registry | Yes | No |
@@ -217,7 +220,9 @@ interface Plugin {
 }
 
 interface PluginContext {
-  worktreeName: string;
+  worktreeId:   string;           // stable identifier (worktree git-dir path — survives directory renames)
+  worktreeName: string;           // display name (cwd basename at register time)
+  city:         string;           // checked-out city — used as {city}.{tld} DNS domain (populated by ports())
   cwd:          string;           // worktree directory
   configRoot:   string;           // main checkout directory
   ports:        Record<string, number>;  // mutable — populated by ports()
@@ -232,7 +237,9 @@ Plugins run **in order** on register and **in reverse** on deregister (stack dis
 
 #### `ports(opts?)`
 
-Allocates ports for each service in `config.services` from `portRange`. Releases them on deregister. **Must come before any plugin that reads `ctx.ports`.**
+Allocates a registry row for the worktree: assigns ports for each service in `config.services` from `portRange`, checks out an unused city from the bundled pool (used as the DNS domain), and writes `WTENV_CITY` to `ctx.envVars`. Releases everything on deregister. **Must come before any plugin that reads `ctx.ports` or `ctx.city`.**
+
+The registry is keyed by the worktree's git-dir path (stable across directory renames), not by the directory basename — so renaming a conductor worktree doesn't orphan its registration.
 
 ```js
 ports({ portRange: [3100, 4099] })
@@ -244,7 +251,7 @@ Writes a dnsmasq config file routing `*.{worktreeName}.{tld}` to `127.0.0.1`. Re
 
 #### `caddy()`
 
-Pushes reverse-proxy routes to Caddy's admin API — one route per service, using each service's hostname to determine the domain pattern. Removes routes on deregister.
+Pushes reverse-proxy routes to Caddy's admin API — one route per service, using each service's hostname together with the worktree's checked-out city to determine the domain pattern (`{hostname}.{city}.{tld}`). Removes routes on deregister.
 
 #### `serviceEnv()`
 
@@ -284,7 +291,7 @@ Creates a PostgreSQL database for the worktree on register. Optionally forks an 
 
 ```js
 postgres({
-  namePattern: 'myapp_development_{worktree}', // {worktree} → sanitized worktree name
+  namePattern: 'myapp_development_{city}', // {city} → sanitized checked-out city ({worktree} kept as legacy alias)
   forkFrom:    'myapp_development',            // optional: clone this database
   host:        'localhost',
   port:        5432,
