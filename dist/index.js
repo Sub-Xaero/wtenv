@@ -9,7 +9,7 @@ import { reregister } from "./commands/reregister.js";
 import { reset } from "./commands/reset.js";
 import { list } from "./commands/list.js";
 import { status } from "./commands/status.js";
-import { projectRegister, projectDeregister } from "./commands/project.js";
+import { projectInit, projectRegister, projectDeregister } from "./commands/project.js";
 const program = new Command();
 program
     .name("wtenv")
@@ -133,6 +133,20 @@ program
 const projectCmd = program
     .command("project")
     .description("Manage static project domain registrations (non-worktree)");
+projectCmd
+    .command("init")
+    .description("Scaffold a .wtenv.config.js with a project block and example pipeline")
+    .option("--force", "Overwrite an existing .wtenv.config.js")
+    .option("--cwd <path>", "Directory to create the config in (default: current directory)")
+    .action((opts) => {
+    try {
+        projectInit(opts);
+    }
+    catch (err) {
+        console.error(err instanceof Error ? err.message : err);
+        process.exit(1);
+    }
+});
 projectCmd
     .command("register")
     .description("Register project domains from .wtenv.json project section")

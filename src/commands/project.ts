@@ -1,9 +1,12 @@
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { loadConfig } from "../lib/config.js";
 import { registerProjectDnsmasq, deregisterProjectDnsmasq } from "../lib/dnsmasq.js";
 import { registerProjectCaddy, deregisterProjectCaddy } from "../lib/caddy.js";
 import { deregisterHostsEntries } from "../lib/hosts.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "../lib/mdns.js";
 import { gitRoot } from "../lib/git.js";
+import { detectProjectName } from "./init.js";
 
 interface ProjectOptions {
   configRoot?: string;
@@ -44,6 +47,77 @@ export async function projectRegister(opts: ProjectOptions = {}): Promise<void> 
   }
 
   console.log(`\nProject '${name}' registered. https://${baseDomain} is live.`);
+}
+
+function buildProjectConfig(name: string): string {
+  return `import { defineConfig, defaultPlugins } from "wtenv";
+// import { postgres } from "wtenv";
+
+export default defineConfig({
+  tld: "test",
+
+  // Static, non-worktree domains served from fixed ports.
+  // Register/deregister with: wtenv project register / wtenv project deregister
+  project: {
+    name: "${name}",
+    baseDomain: "${name}.test", // *.${name}.test resolves to 127.0.0.1
+    domains: [
+      { hostname: "${name}.test",     port: 5000 },
+      { hostname: "api.${name}.test", port: 5001 },
+    ],
+  },
+
+  // services + plugins drive per-worktree \`wtenv register\`.
+  // Leave services empty if you only need project-domain registration.
+  services: {},
+
+  plugins: [
+    ...defaultPlugins(),
+    // defaultPlugins() runs: ports → dns → caddy → serviceEnv
+    // (in order on register, reverse on deregister).
+    //
+    // Pipeline examples — uncomment and adapt:
+    //
+    // {
+    //   name: "my-plugin",
+    //   onRegister(ctx) {
+    //     ctx.envVars.MY_VAR = \`https://\${ctx.worktreeName}.\${ctx.config.tld}\`;
+    //   },
+    //   onDeregister(ctx) {
+    //     // cleanup
+    //   },
+    // },
+    //
+    // postgres({
+    //   namePattern: "${name}_{worktree}",
+    //   host: "localhost",
+    //   port: 5432,
+    //   username: "postgres",
+    //   password: "postgres",
+    //   envVar: "DATABASE_URL",
+    // }),
+  ],
+});
+`;
+}
+
+export function projectInit(options: { force?: boolean; cwd?: string } = {}): void {
+  const cwd = options.cwd ?? process.cwd();
+  const outPath = join(cwd, ".wtenv.config.js");
+
+  if (existsSync(outPath) && !options.force) {
+    console.error(`.wtenv.config.js already exists. Use --force to overwrite.`);
+    process.exit(1);
+  }
+
+  const name = detectProjectName(cwd) ?? "myapp";
+
+  writeFileSync(outPath, buildProjectConfig(name));
+
+  console.log(`Created .wtenv.config.js with project block for "${name}"`);
+  console.log("\nNext steps:");
+  console.log("  1. Edit .wtenv.config.js — set domains/ports for your services");
+  console.log("  2. Run wtenv project register to register the project's static domains");
 }
 
 export async function projectDeregister(opts: ProjectOptions = {}): Promise<void> {

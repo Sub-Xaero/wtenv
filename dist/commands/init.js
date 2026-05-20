@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
-function detectProjectName(cwd) {
+export function detectProjectName(cwd) {
     const pkgPath = join(cwd, "package.json");
     if (existsSync(pkgPath)) {
         try {
