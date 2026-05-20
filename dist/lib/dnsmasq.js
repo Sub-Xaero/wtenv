@@ -151,4 +151,8 @@ function reloadDnsmasq() {
             // dnsmasq not running — not fatal, it will pick up config on next start
         }
     }
+    // The system resolver may have cached NXDOMAIN for names dnsmasq now answers
+    // (e.g. when /etc/resolver/<tld> was already in place). Flush so the new config
+    // takes effect immediately. Best-effort — sudoExec uses -n and skips silently.
+    flushDnsCache();
 }
