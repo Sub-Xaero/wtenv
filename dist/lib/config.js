@@ -61,6 +61,7 @@ function normalizeConfig(raw, fromJson) {
         project: raw.project,
         database: raw.database,
         services: raw.services ?? DEFAULTS.services,
+        aliases: raw.aliases,
         plugins,
     };
 }

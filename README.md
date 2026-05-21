@@ -106,6 +106,7 @@ wtenv auto-detects everything from git — no flags needed:
 |---|---|---|
 | `tld` | `"test"` | TLD for all worktree domains. `.local` is supported but requires sudo per `wtenv register` — see [.local caveat](#local-caveat) |
 | `services` | `{ web: { hostname: "*" } }` | Services to allocate ports for |
+| `aliases` | — | URL shortcuts for `wtenv open` / `wtenv project open` (no ports, no Caddy routes — just a subdomain prefix lookup). See [Aliases](#aliases) |
 | `project` | — | Static project domain config (see [Project domains](#project-domains)) |
 | `plugins` | `[]` | Plugin pipeline — runs in order on register, reverse on deregister |
 
@@ -143,6 +144,29 @@ env: {
   ASSETS_URL:     'https://{fqdn}', // → "https://assets.almaty.test"
 }
 ```
+
+### Aliases
+
+Short names for full subdomain paths, resolved by `wtenv open` and `wtenv project open`. Aliases don't allocate ports or add Caddy routes — they're pure URL shortcuts for things that already resolve through the wildcard DNS rule.
+
+```js
+defineConfig({
+  // ...
+  aliases: {
+    pro:     'pro-company.dev',
+    staging: 'staging-environment',
+  },
+})
+```
+
+Then:
+
+```bash
+wtenv open pro             # https://pro-company.dev.<city>.<tld>
+wtenv project open pro     # https://pro-company.dev.<baseDomain>
+```
+
+Resolution order for `wtenv open <arg>`: **service name** → **alias name** → **literal subdomain**. Services win on collision (they're "real" — they have ports + Caddy routes). For `wtenv project open <arg>` there are no services, so the order is just alias → literal.
 
 ---
 

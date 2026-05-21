@@ -22,12 +22,18 @@ export async function open(arg, opts = {}) {
         process.exit(1);
     }
     const config = await loadConfig(configRoot);
-    // arg resolution: service-name match wins, else literal subdomain, else root.
+    // arg resolution: service → alias → literal subdomain → root.
+    // Services win over aliases on a name collision (they're "real" — they have
+    // ports + Caddy routes).
     let subdomain = "";
     if (arg) {
         const service = config.services[arg];
+        const alias = config.aliases?.[arg];
         if (service) {
             subdomain = service.hostname === "*" ? "" : service.hostname;
+        }
+        else if (alias !== undefined) {
+            subdomain = alias;
         }
         else {
             subdomain = arg;
@@ -43,6 +49,11 @@ export async function projectOpen(arg, opts = {}) {
         console.error("No project config found in .wtenv.config.js");
         process.exit(1);
     }
-    const host = arg ? `${arg}.${config.project.baseDomain}` : config.project.baseDomain;
+    // project open has no services — arg resolution is just alias → literal.
+    let prefix = "";
+    if (arg) {
+        prefix = config.aliases?.[arg] ?? arg;
+    }
+    const host = prefix ? `${prefix}.${config.project.baseDomain}` : config.project.baseDomain;
     launch(`https://${host}`, opts.print ?? false);
 }

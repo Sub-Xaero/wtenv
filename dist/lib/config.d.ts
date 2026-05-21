@@ -40,6 +40,7 @@ export interface WtenvConfig {
     project?: ProjectConfig;
     database?: DatabaseConfig;
     services: Record<string, ServiceConfig>;
+    aliases?: Record<string, string>;
     plugins: Plugin[];
 }
 export declare function defineConfig(config: Omit<WtenvConfig, "plugins"> & {

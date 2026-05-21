@@ -66,6 +66,10 @@ export interface WtenvConfig {
   project?: ProjectConfig;
   database?: DatabaseConfig;
   services: Record<string, ServiceConfig>;
+  // URL shortcuts resolved by `wtenv open` and `wtenv project open`.
+  // Value is the subdomain prefix — e.g. { pro: "pro-company.dev" } makes
+  // `wtenv open pro` → https://pro-company.dev.<city>.<tld>.
+  aliases?: Record<string, string>;
   plugins: Plugin[];
 }
 
@@ -124,6 +128,7 @@ function normalizeConfig(
     project: raw.project,
     database: raw.database,
     services: raw.services ?? DEFAULTS.services,
+    aliases: raw.aliases,
     plugins,
   };
 }
