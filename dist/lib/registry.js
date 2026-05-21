@@ -135,6 +135,9 @@ export function getWorktreePorts(id) {
 export function listWorktrees() {
     const db = openDb();
     try {
+        // node:sqlite's .all() returns Record<string, SQLOutputValue>[]; cast via
+        // unknown because Worktree's named fields don't structurally overlap with
+        // the index signature.
         const worktrees = db
             .prepare("SELECT * FROM worktrees ORDER BY created_at DESC")
             .all();

@@ -181,9 +181,12 @@ export function getWorktreePorts(id: string): Record<string, number> {
 export function listWorktrees(): Array<Worktree & { ports: Record<string, number> }> {
   const db = openDb();
   try {
+    // node:sqlite's .all() returns Record<string, SQLOutputValue>[]; cast via
+    // unknown because Worktree's named fields don't structurally overlap with
+    // the index signature.
     const worktrees = db
       .prepare("SELECT * FROM worktrees ORDER BY created_at DESC")
-      .all() as Worktree[];
+      .all() as unknown as Worktree[];
     return worktrees.map((wt) => {
       const ports = db
         .prepare("SELECT service_name, port FROM port_assignments WHERE worktree_id = ?")
