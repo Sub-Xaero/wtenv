@@ -70,13 +70,14 @@ function pickCity(db: Database.Database, hint?: string): string {
   const takenRows = db.prepare("SELECT city FROM worktrees").all() as { city: string }[];
   const taken = new Set(takenRows.map((r) => r.city));
   if (hint && !taken.has(hint)) return hint;
-  for (const candidate of BUNDLED_CITIES) {
-    if (!taken.has(candidate)) return candidate;
+  const available = BUNDLED_CITIES.filter((c) => !taken.has(c));
+  if (available.length === 0) {
+    throw new Error(
+      `City pool exhausted (${BUNDLED_CITIES.length} cities, ${taken.size} taken). ` +
+        `Deregister an unused worktree or extend src/lib/cities.ts.`
+    );
   }
-  throw new Error(
-    `City pool exhausted (${BUNDLED_CITIES.length} cities, ${taken.size} taken). ` +
-      `Deregister an unused worktree or extend src/lib/cities.ts.`
-  );
+  return available[Math.floor(Math.random() * available.length)];
 }
 
 export interface AllocationResult {
