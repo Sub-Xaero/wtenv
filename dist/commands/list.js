@@ -1,10 +1,11 @@
 import { listWorktrees } from "../lib/registry.js";
 import { loadConfig } from "../lib/config.js";
 import { gitRoot } from "../lib/git.js";
+import { header, step, info, c } from "../lib/log.js";
 export async function list() {
     const worktrees = listWorktrees();
     if (worktrees.length === 0) {
-        console.log("No worktrees registered.");
+        info("No worktrees registered");
         return;
     }
     // Cache configs by configRoot so we don't re-load the same .wtenv.config.js
@@ -21,23 +22,25 @@ export async function list() {
         }
         return configCache.get(configRoot) ?? null;
     };
+    header(`Registered worktrees (${worktrees.length})`);
     for (const wt of worktrees) {
         const configRoot = gitRoot(wt.project_root) ?? wt.project_root;
         const config = await loadCachedConfig(configRoot);
         const tld = config?.tld ?? "test";
         const age = formatAge(wt.created_at);
-        console.log(`\n${wt.name}  →  ${wt.city}.${tld}  (${age})`);
-        console.log(`  project: ${wt.project_root}`);
+        console.log();
+        step(`${wt.name}  →  ${wt.city}.${tld}  ${c.dim(`(${age})`)}`);
+        info(`${c.dim("project:")} ${wt.project_root}`);
         for (const [service, port] of Object.entries(wt.ports)) {
             const serviceCfg = config?.services[service];
             if (serviceCfg) {
                 const hostname = serviceCfg.hostname === "*"
                     ? `*.${wt.city}.${tld}`
                     : `${serviceCfg.hostname}.${wt.city}.${tld}`;
-                console.log(`  ${service.padEnd(10)} :${port}   https://${hostname}`);
+                info(`${service.padEnd(10)} :${port}   https://${hostname}`);
             }
             else {
-                console.log(`  ${service.padEnd(10)} :${port}`);
+                info(`${service.padEnd(10)} :${port}`);
             }
         }
     }

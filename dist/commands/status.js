@@ -3,13 +3,16 @@ import dns from "node:dns/promises";
 import { isDnsmasqRunning } from "../lib/dnsmasq.js";
 import { isCaddyRunning } from "../lib/caddy.js";
 import { listWorktrees } from "../lib/registry.js";
+import { header, step, info, c } from "../lib/log.js";
 function check(label, ok, detail) {
-    const icon = ok ? "✓" : "✗";
-    const line = detail ? `${icon}  ${label}  (${detail})` : `${icon}  ${label}`;
-    console.log(line);
+    const icon = ok ? c.green("✓") : c.red("✗");
+    const suffix = detail ? `  ${c.dim(`(${detail})`)}` : "";
+    console.log(`    ${icon} ${label}${suffix}`);
 }
 export async function status() {
-    console.log("Infrastructure\n");
+    header("wtenv status");
+    console.log();
+    step("infrastructure");
     check("dnsmasq running", isDnsmasqRunning());
     check("/etc/resolver/test exists", existsSync("/etc/resolver/test"));
     const caddyUp = await isCaddyRunning();
@@ -30,14 +33,18 @@ export async function status() {
     else {
         check("DNS resolves *.test → 127.0.0.1", isDnsmasqRunning(), "no worktrees registered yet to probe");
     }
-    console.log(`\nRegistered worktrees: ${worktrees.length}`);
-    if (worktrees.length > 0) {
+    console.log();
+    step(`registered worktrees (${worktrees.length})`);
+    if (worktrees.length === 0) {
+        info("none");
+    }
+    else {
         for (const wt of worktrees) {
             const portSummary = Object.entries(wt.ports)
                 .map(([s, p]) => `${s}:${p}`)
                 .join("  ");
             const label = `${wt.name} (${wt.city})`;
-            console.log(`  ${label.padEnd(36)} ${portSummary}`);
+            info(`${label.padEnd(36)} ${portSummary}`);
         }
     }
 }

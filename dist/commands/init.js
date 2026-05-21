@@ -1,6 +1,7 @@
 import { existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
+import { success, info, error } from "../lib/log.js";
 export function detectProjectName(cwd) {
     const pkgPath = join(cwd, "package.json");
     if (existsSync(pkgPath)) {
@@ -88,17 +89,18 @@ export function init(options = {}) {
     const cwd = options.cwd ?? process.cwd();
     const outPath = join(cwd, ".wtenv.config.js");
     if (existsSync(outPath) && !options.force) {
-        console.error(`.wtenv.config.js already exists. Use --force to overwrite.`);
+        error(".wtenv.config.js already exists. Use --force to overwrite.");
         process.exit(1);
     }
     const projectName = detectProjectName(cwd);
     const withPostgres = hasPostgresDep(cwd);
     writeFileSync(outPath, buildConfig(projectName, withPostgres));
-    console.log(`Created .wtenv.config.js${projectName ? ` for project "${projectName}"` : ""}`);
+    success(`Created .wtenv.config.js${projectName ? ` for project "${projectName}"` : ""}`);
     if (withPostgres) {
-        console.log("  Detected Postgres dependency — postgres() plugin snippet included (commented out).");
+        info("detected Postgres dependency — postgres() plugin snippet included (commented out)");
     }
-    console.log("\nNext steps:");
+    console.log();
+    console.log("Next steps:");
     console.log("  1. Review and edit .wtenv.config.js");
     console.log("  2. Run wtenv register to create a worktree environment");
 }
