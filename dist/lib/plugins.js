@@ -166,11 +166,16 @@ function runCommands(commands, ctx) {
 }
 export function direnv(options = {}) {
     const envFile = options.envFile ?? ".env.worktree";
+    // Later files override earlier ones in direnv's dotenv loader, so worktree
+    // overrides local overrides base. Each line is skipped at eval time if the
+    // file isn't present.
+    const sources = [".env", ".env.local", envFile];
     return {
         name: "wtenv:direnv",
         onRegister(ctx) {
-            writeFileSync(join(ctx.cwd, ".envrc"), `dotenv ${envFile}\n`);
-            info(`wrote .envrc (dotenv ${envFile})`);
+            const body = sources.map((f) => `dotenv_if_exists ${f}`).join("\n") + "\n";
+            writeFileSync(join(ctx.cwd, ".envrc"), body);
+            info(`wrote .envrc (dotenv_if_exists ${sources.join(", ")})`);
         },
         onDeregister(ctx) {
             const envrcPath = join(ctx.cwd, ".envrc");
