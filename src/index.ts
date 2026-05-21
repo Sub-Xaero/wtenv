@@ -11,6 +11,7 @@ import { list } from "./commands/list.js";
 import { status } from "./commands/status.js";
 import { projectInit, projectRegister, projectDeregister } from "./commands/project.js";
 import { open, projectOpen } from "./commands/open.js";
+import { kill, projectKill } from "./commands/kill.js";
 
 const program = new Command();
 
@@ -136,6 +137,20 @@ program
   });
 
 program
+  .command("kill")
+  .description("Terminate processes listening on this worktree's allocated ports")
+  .option("-f, --force", "Send SIGKILL instead of SIGTERM")
+  .option("--dry-run", "List matching processes without killing them")
+  .action(async (opts: { force?: boolean; dryRun?: boolean }) => {
+    try {
+      await kill({ force: opts.force, dryRun: opts.dryRun });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
   .command("status")
   .description("Check dnsmasq and Caddy health")
   .action(async () => {
@@ -186,6 +201,21 @@ projectCmd
   .action(async (arg: string | undefined, opts: { configRoot?: string; print?: boolean }) => {
     try {
       await projectOpen(arg, { configRoot: opts.configRoot, print: opts.print });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+projectCmd
+  .command("kill")
+  .description("Terminate processes listening on the configured project domain ports")
+  .option("--config-root <path>", "Directory containing .wtenv.config.js (default: git root)")
+  .option("-f, --force", "Send SIGKILL instead of SIGTERM")
+  .option("--dry-run", "List matching processes without killing them")
+  .action(async (opts: { configRoot?: string; force?: boolean; dryRun?: boolean }) => {
+    try {
+      await projectKill({ configRoot: opts.configRoot, force: opts.force, dryRun: opts.dryRun });
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);

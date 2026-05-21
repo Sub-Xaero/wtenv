@@ -386,10 +386,15 @@ wtenv status
 # Use --print to emit the URL instead of opening a browser (handy for shell pipelines).
 wtenv open [arg] [--print]
 
-# Register/deregister/open static project domains (non-worktree)
+# Kill listening processes bound to this worktree's allocated ports.
+# Defaults to SIGTERM (graceful); use --force / -f for SIGKILL.
+wtenv kill [--force] [--dry-run]
+
+# Register/deregister/open/kill static project domains (non-worktree)
 wtenv project register [--config-root <path>]
 wtenv project deregister [--config-root <path>]
 wtenv project open [arg] [--print]   # arg is prepended as a literal subdomain of baseDomain
+wtenv project kill [--force] [--dry-run]
 ```
 
 `name`, `cwd`, and `configRoot` are all derived from git automatically. Pass `name` explicitly only if you need to override.
