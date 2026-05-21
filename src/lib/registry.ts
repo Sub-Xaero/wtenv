@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -25,11 +25,11 @@ export interface AllocateOptions {
   cityHint?: string;
 }
 
-function openDb(): Database.Database {
+function openDb(): DatabaseSync {
   if (!existsSync(DB_DIR)) mkdirSync(DB_DIR, { recursive: true });
-  const db = new Database(DB_PATH);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
+  const db = new DatabaseSync(DB_PATH);
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA foreign_keys = ON");
   migrate(db);
   return db;
 }
@@ -37,7 +37,7 @@ function openDb(): Database.Database {
 // Drop legacy v1 schema (name-keyed, no city column) and recreate. v1 is
 // unsalvageable: conductor renames worktree directories so the name primary
 // key gets stale, which is the whole reason we're switching to a git-dir id.
-function migrate(db: Database.Database): void {
+function migrate(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(worktrees)").all() as { name: string }[];
   const hasNewSchema = cols.some((c) => c.name === "id") && cols.some((c) => c.name === "city");
   if (cols.length > 0 && !hasNewSchema) {
@@ -66,7 +66,7 @@ function migrate(db: Database.Database): void {
   `);
 }
 
-function pickCity(db: Database.Database, hint?: string): string {
+function pickCity(db: DatabaseSync, hint?: string): string {
   const takenRows = db.prepare("SELECT city FROM worktrees").all() as { city: string }[];
   const taken = new Set(takenRows.map((r) => r.city));
   if (hint && !taken.has(hint)) return hint;
@@ -128,12 +128,17 @@ export function allocateWorktree(
     const insertPort = db.prepare(
       "INSERT INTO port_assignments (worktree_id, service_name, port) VALUES (?, ?, ?)"
     );
-    db.transaction(() => {
+    db.exec("BEGIN");
+    try {
       insertWorktree.run(id, name, city, projectRoot, Date.now());
       for (const [service, port] of Object.entries(assignments)) {
         insertPort.run(id, service, port);
       }
-    })();
+      db.exec("COMMIT");
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw err;
+    }
 
     return { city, ports: assignments };
   } finally {

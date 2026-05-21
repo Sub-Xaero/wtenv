@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -8,9 +8,9 @@ const DB_PATH = join(DB_DIR, "registry.db");
 function openDb() {
     if (!existsSync(DB_DIR))
         mkdirSync(DB_DIR, { recursive: true });
-    const db = new Database(DB_PATH);
-    db.pragma("journal_mode = WAL");
-    db.pragma("foreign_keys = ON");
+    const db = new DatabaseSync(DB_PATH);
+    db.exec("PRAGMA journal_mode = WAL");
+    db.exec("PRAGMA foreign_keys = ON");
     migrate(db);
     return db;
 }
@@ -82,12 +82,18 @@ export function allocateWorktree(id, name, projectRoot, services, portRange, opt
         }
         const insertWorktree = db.prepare("INSERT INTO worktrees (id, name, city, project_root, created_at) VALUES (?, ?, ?, ?, ?)");
         const insertPort = db.prepare("INSERT INTO port_assignments (worktree_id, service_name, port) VALUES (?, ?, ?)");
-        db.transaction(() => {
+        db.exec("BEGIN");
+        try {
             insertWorktree.run(id, name, city, projectRoot, Date.now());
             for (const [service, port] of Object.entries(assignments)) {
                 insertPort.run(id, service, port);
             }
-        })();
+            db.exec("COMMIT");
+        }
+        catch (err) {
+            db.exec("ROLLBACK");
+            throw err;
+        }
         return { city, ports: assignments };
     }
     finally {
