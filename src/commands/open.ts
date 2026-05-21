@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { loadConfig } from "../lib/config.js";
 import { getWorktree } from "../lib/registry.js";
 import { gitRoot, worktreeId, worktreeRoot } from "../lib/git.js";
+import { header, error } from "../lib/log.js";
 
 interface OpenOptions {
   cwd?: string;
@@ -14,11 +15,15 @@ interface ProjectOpenOptions {
   print?: boolean;
 }
 
+// In --print mode, emit just the URL so it can be piped/captured.
+// Otherwise announce what we're opening, then fork `open` and unref so the CLI
+// returns immediately (the browser launches asynchronously).
 function launch(url: string, print: boolean): void {
   if (print) {
     console.log(url);
     return;
   }
+  header(`Opening ${url}`);
   spawn("open", [url], { stdio: "ignore", detached: true }).unref();
 }
 
@@ -32,7 +37,7 @@ export async function open(arg: string | undefined, opts: OpenOptions = {}): Pro
 
   const wt = getWorktree(id);
   if (!wt) {
-    console.error(`No registered worktree found at '${cwd}'. Run wtenv register first.`);
+    error(`No registered worktree found at '${cwd}'. Run wtenv register first.`);
     process.exit(1);
   }
 
@@ -65,7 +70,7 @@ export async function projectOpen(
   const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
   const config = await loadConfig(configRoot);
   if (!config.project) {
-    console.error("No project config found in .wtenv.config.js");
+    error("No project config found in .wtenv.config.js");
     process.exit(1);
   }
 

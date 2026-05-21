@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { isCaddyRunning, setListener } from "../lib/caddy.js";
 import { promptYN } from "../lib/prompt.js";
 import { primeSudoCache } from "../lib/sudo.js";
+import { header, step, info, success, warn, c } from "../lib/log.js";
 
 const RESOLVER_PATH = "/etc/resolver/test";
 const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
@@ -12,15 +13,18 @@ const DNSMASQ_CONF = "/opt/homebrew/etc/dnsmasq.conf";
 const CADDY_DAEMON_PLIST = "/Library/LaunchDaemons/wtenv.caddy.plist";
 const CADDY_PID_FILE = "/tmp/wtenv-caddy.pid";
 
+// Run a command silently with progress framing. Suppresses subprocess output
+// so the user sees a clean "label... done/failed" line per setup substep —
+// the verbose brew/caddy output is only relevant when something goes wrong.
 function run(cmd: string, label: string, timeoutMs = 15_000): boolean {
-  process.stdout.write(`  ${label}... `);
+  process.stdout.write(`    ${c.dim("→")} ${label}... `);
   try {
     execSync(cmd, { stdio: "pipe", timeout: timeoutMs });
-    console.log("done");
+    process.stdout.write("done\n");
     return true;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.log(`failed\n    ${msg}`);
+    process.stdout.write(`failed\n      ${msg}\n`);
     return false;
   }
 }
@@ -67,20 +71,26 @@ ${username} ALL=(root) NOPASSWD: WTENV_HOSTS, WTENV_RESOLVER, WTENV_DNS
 export async function installSudoers(): Promise<void> {
   const username = userInfo().username;
   const fragment = buildSudoersFragment(username);
-  console.log(`Installing sudoers fragment for ${username} → ${SUDOERS_FRAGMENT_PATH}\n`);
+
+  header(`Installing sudoers fragment for ${username}`);
+  console.log(`    ${c.dim("target:")} ${SUDOERS_FRAGMENT_PATH}`);
+  console.log();
 
   writeFileSync(SUDOERS_STAGING, fragment, { mode: 0o440 });
 
   // Validate first — visudo -c refuses to apply broken fragments.
-  console.log("  Validating syntax with visudo...");
+  step("validate");
+  info("running visudo -c against staged fragment");
   const check = spawnSync("sudo", ["/usr/sbin/visudo", "-c", "-f", SUDOERS_STAGING], { stdio: "inherit" });
   if (check.status !== 0) {
     throw new Error("sudoers fragment failed visudo validation — not installing");
   }
+  console.log();
 
   // install(1) sets owner+group+mode atomically. This is the one-and-only sudo
   // prompt the user should see; everything after this runs passwordless.
-  console.log(`  Installing as root:wheel mode 0440 (will prompt for password once)...`);
+  step("install");
+  info("install -m 0440 -o root -g wheel (one sudo prompt)");
   const result = spawnSync(
     "sudo",
     ["/usr/bin/install", "-m", "0440", "-o", "root", "-g", "wheel", SUDOERS_STAGING, SUDOERS_FRAGMENT_PATH],
@@ -89,9 +99,11 @@ export async function installSudoers(): Promise<void> {
   if (result.status !== 0) {
     throw new Error(`install failed (exit ${result.status})`);
   }
+  console.log();
 
-  console.log(`\n  Installed. Verify with:  sudo cat ${SUDOERS_FRAGMENT_PATH}`);
-  console.log(`  wtenv register/deregister should now run without password prompts.`);
+  success("Sudoers fragment installed");
+  console.log(`    ${c.dim("verify:")}   sudo cat ${SUDOERS_FRAGMENT_PATH}`);
+  console.log(`    ${c.dim("effect:")}   wtenv register/deregister will now run without password prompts`);
 }
 
 export interface SetupOptions {
@@ -103,23 +115,27 @@ export async function setup(opts: SetupOptions = {}): Promise<void> {
     await installSudoers();
     return;
   }
-  console.log("wtenv one-time setup\n");
+  header("Running wtenv setup");
+  console.log();
 
   // Offer the sudoers fragment up front. Installing it both primes the sudo
   // cache and lets the whitelisted register/deregister commands run NOPASSWD
   // for the remainder of setup (and forever after).
   if (!existsSync(SUDOERS_FRAGMENT_PATH)) {
-    console.log("Optional: install a sudoers fragment so `wtenv register`/`deregister` run");
-    console.log("without password prompts. Whitelists only the /etc/hosts and /etc/resolver");
-    console.log("edits wtenv needs — see `wtenv setup --install-sudoers` for the exact commands.");
-    if (await promptYN("Install /etc/sudoers.d/wtenv?")) {
+    step("sudoers (optional)");
+    console.log("    Install a sudoers fragment so wtenv register/deregister run without");
+    console.log("    password prompts. Whitelists only the /etc/hosts and /etc/resolver");
+    console.log("    edits wtenv needs — see `wtenv setup --install-sudoers` for the exact");
+    console.log("    commands it whitelists.");
+    console.log();
+    if (await promptYN("    Install /etc/sudoers.d/wtenv?")) {
       try {
         await installSudoers();
       } catch (err) {
-        console.warn(`  sudoers install failed: ${err instanceof Error ? err.message : err}`);
+        warn(`sudoers install failed: ${err instanceof Error ? err.message : err}`);
       }
     } else {
-      console.log("  Skipped. Install later with: wtenv setup --install-sudoers");
+      info("skipped — install later with: wtenv setup --install-sudoers");
     }
     console.log();
   }
@@ -135,12 +151,13 @@ export async function setup(opts: SetupOptions = {}): Promise<void> {
 async function runSetup(): Promise<void> {
 
   // --- dnsmasq ---
+  step("dnsmasq");
 
   const dnsmasqInstalled = spawnSync("which", ["dnsmasq"], { stdio: "pipe" }).status === 0;
   if (!dnsmasqInstalled) {
-    run("brew install dnsmasq", "Installing dnsmasq", 120_000);
+    run("brew install dnsmasq", "installing dnsmasq", 120_000);
   } else {
-    console.log("  dnsmasq already installed");
+    info("dnsmasq already installed");
   }
 
   // Ensure dnsmasq.d dir exists and is included in config
@@ -153,7 +170,7 @@ async function runSetup(): Promise<void> {
     );
     if (!activeConfDir) {
       content += `\nconf-dir=${DNSMASQ_CONF_DIR}/,*.conf\n`;
-      console.log("  Added conf-dir to dnsmasq.conf");
+      info("added conf-dir to dnsmasq.conf");
     }
 
     // Run on non-privileged port 5300 so dnsmasq can run as a user service.
@@ -165,7 +182,7 @@ async function runSetup(): Promise<void> {
       // Migrate from old port=5353 if present
       content = content.replace(/^\s*port=5353\s*$/m, "");
       content += `\nport=5300\nlisten-address=127.0.0.1\nbind-interfaces\n`;
-      console.log("  Configured dnsmasq to listen on 127.0.0.1:5300");
+      info("configured dnsmasq to listen on 127.0.0.1:5300");
     }
 
     writeFileSync(DNSMASQ_CONF, content);
@@ -175,58 +192,59 @@ async function runSetup(): Promise<void> {
   const dnsmasqAsRoot = spawnSync("sudo", ["brew", "services", "list"], { stdio: "pipe" })
     .stdout.toString().includes("dnsmasq") ?? false;
   if (dnsmasqAsRoot) {
-    console.log("  Stopping root dnsmasq service (requires sudo)...");
-    spawnSync("sudo", ["brew", "services", "stop", "dnsmasq"], { stdio: "inherit", timeout: 10_000 });
+    run("sudo brew services stop dnsmasq", "stopping root dnsmasq service", 10_000);
   }
 
   const dnsmasqUserRunning = spawnSync("brew", ["services", "list"], { stdio: "pipe" })
     .stdout.toString().match(/dnsmasq\s+started/) !== null;
   if (dnsmasqUserRunning) {
-    console.log("  dnsmasq already running as user service");
+    info("dnsmasq already running as user service");
   } else {
-    run("brew services start dnsmasq", "Starting dnsmasq as user service");
+    run("brew services start dnsmasq", "starting dnsmasq as user service");
   }
+  console.log();
 
   // --- /etc/resolver/test ---
   // Tell macOS resolver to query dnsmasq directly on port 5300 (no pfctl redirect needed).
   // macOS pf rdr rules don't intercept locally-generated traffic, so port forwarding
   // 53→5300 doesn't work for system DNS queries.
 
+  step("resolver");
   // use-vc forces TCP queries — dnsmasq has a macOS UDP socket bug where it stops
   // receiving after the first packet; TCP is reliable for multiple concurrent queries.
   const resolverContent = "nameserver 127.0.0.1\nport 5300\noptions use-vc\n";
   const existingResolver = existsSync(RESOLVER_PATH) ? readFileSync(RESOLVER_PATH, "utf8") : "";
   if (existingResolver.trim() !== resolverContent.trim()) {
-    console.log("  Writing /etc/resolver/test (requires sudo)...");
+    info(`writing ${RESOLVER_PATH} (one sudo prompt)`);
     const result = spawnSync(
       "sudo",
       ["bash", "-c", `mkdir -p /etc/resolver && printf 'nameserver 127.0.0.1\\nport 5300\\noptions use-vc\\n' > ${RESOLVER_PATH}`],
       { stdio: "inherit" }
     );
     if (result.status !== 0) {
-      console.log(
-        `  failed — run manually:\n    sudo bash -c "printf 'nameserver 127.0.0.1\\\\nport 5300\\\\noptions use-vc\\\\n' > ${RESOLVER_PATH}"`
-      );
+      warn(`failed — run manually: sudo bash -c "printf 'nameserver 127.0.0.1\\nport 5300\\noptions use-vc\\n' > ${RESOLVER_PATH}"`);
     }
   } else {
-    console.log(`  ${RESOLVER_PATH} already configured`);
+    info(`${RESOLVER_PATH} already configured`);
   }
 
   // Flush mDNSResponder cache so the new resolver config is picked up immediately.
   // Without this, stale negative entries cause resolution failures until the cache expires.
   // Invoking the binaries directly (rather than via `bash -c`) keeps them covered by
   // the WTENV_DNS sudoers alias when the fragment is installed.
-  console.log("  Flushing DNS cache...");
+  info("flushing DNS cache");
   spawnSync("sudo", ["/usr/bin/dscacheutil", "-flushcache"], { stdio: "inherit" });
   spawnSync("sudo", ["/usr/bin/killall", "-HUP", "mDNSResponder"], { stdio: "inherit" });
+  console.log();
 
   // --- Caddy ---
+  step("caddy");
 
   const caddyInstalled = spawnSync("which", ["caddy"], { stdio: "pipe" }).status === 0;
   if (!caddyInstalled) {
-    run("brew install caddy", "Installing Caddy", 120_000);
+    run("brew install caddy", "installing Caddy", 120_000);
   } else {
-    console.log("  Caddy already installed");
+    info("Caddy already installed");
   }
 
   // Write Caddyfile (fallback config used on first boot before --resume has a saved state)
@@ -234,7 +252,7 @@ async function runSetup(): Promise<void> {
   const brewCaddyfile = "/opt/homebrew/etc/Caddyfile";
   if (!existsSync(brewCaddyfile) || !readFileSync(brewCaddyfile, "utf8").includes("admin localhost:2019")) {
     writeFileSync(brewCaddyfile, caddyfileContent);
-    console.log("  Wrote Caddy config");
+    info(`wrote ${brewCaddyfile}`);
   }
 
   // Use our own LaunchDaemon instead of brew's so we can pass --resume and --pidfile.
@@ -281,7 +299,7 @@ async function runSetup(): Promise<void> {
     readFileSync(CADDY_DAEMON_PLIST, "utf8").includes("--resume");
 
   if (caddyApiUp && daemonIsCurrent) {
-    console.log("  Caddy already running with wtenv daemon");
+    info("Caddy already running with wtenv daemon");
   } else {
     // Unload brew's service if present to avoid port conflicts
     if (existsSync("/Library/LaunchDaemons/homebrew.mxcl.caddy.plist")) {
@@ -291,37 +309,38 @@ async function runSetup(): Promise<void> {
     const tmpDaemon = "/tmp/wtenv-caddy-daemon.plist";
     writeFileSync(tmpDaemon, daemonPlistContent);
 
-    console.log("  Installing Caddy service (requires sudo)...");
+    info("installing Caddy LaunchDaemon (one sudo prompt)");
     const result = spawnSync(
       "sudo",
       ["bash", "-c", `launchctl unload '${CADDY_DAEMON_PLIST}' 2>/dev/null; cp '${tmpDaemon}' '${CADDY_DAEMON_PLIST}' && launchctl load '${CADDY_DAEMON_PLIST}'`],
       { stdio: "inherit", timeout: 15_000 }
     );
     if (result.status !== 0) {
-      console.log(`  failed — run manually: sudo cp ${tmpDaemon} ${CADDY_DAEMON_PLIST} && sudo launchctl load ${CADDY_DAEMON_PLIST}`);
+      warn(`failed — run manually: sudo cp ${tmpDaemon} ${CADDY_DAEMON_PLIST} && sudo launchctl load ${CADDY_DAEMON_PLIST}`);
     }
   }
 
-  run("caddy trust", "Trusting Caddy local CA (may prompt for password)", 30_000);
+  run("caddy trust", "trusting Caddy local CA (may prompt for password)", 30_000);
 
   // Switch Caddy to HTTPS if port 443 is free (i.e. LocalCan has been quit)
   const port443InUse = spawnSync("lsof", ["-i", "TCP:443", "-sTCP:LISTEN"], { stdio: "pipe" }).stdout.toString().trim().length > 0;
   if (!port443InUse && await isCaddyRunning()) {
     try {
       await setListener([":443", ":80"]);
-      console.log("  Caddy switched to HTTPS (:443 + :80)");
+      info("Caddy switched to HTTPS (:443 + :80)");
     } catch {
-      console.log("  Could not switch Caddy to :443 (try again after quitting LocalCan)");
+      warn("could not switch Caddy to :443 (try again after quitting LocalCan)");
     }
   } else if (port443InUse) {
-    console.log("\nNote: port 443 is in use (LocalCan?). Caddy stays on :80.");
-    console.log("      Quit LocalCan and re-run 'wtenv setup' to enable HTTPS.");
+    warn("port 443 is in use (LocalCan?). Caddy stays on :80. Quit LocalCan and re-run 'wtenv setup' to enable HTTPS.");
   }
+  console.log();
 
   // --- Caddy restore agent (safety net) ---
   // Caddy's --resume handles config reload on restart automatically. This agent
   // is a fallback: it fires at login and whenever the PID file appears (Caddy restart),
   // then POSTs the saved config if the autosave is empty or stale.
+  step("caddy-restore agent");
   const configDir = join(process.env.HOME!, ".config", "wtenv");
   mkdirSync(configDir, { recursive: true });
 
@@ -373,8 +392,9 @@ done
 
   spawnSync("launchctl", ["unload", plistPath], { stdio: "ignore" });
   spawnSync("launchctl", ["load", plistPath], { stdio: "ignore" });
-  console.log("  Caddy restore agent installed");
+  info(`installed LaunchAgent at ${plistPath}`);
+  console.log();
 
-  console.log("\nSetup complete.");
-  console.log("Verify DNS: ping -c1 anything.test  — should resolve to 127.0.0.1");
+  success("Setup complete");
+  console.log(`    ${c.dim("verify DNS:")} ping -c1 anything.test  — should resolve to 127.0.0.1`);
 }
