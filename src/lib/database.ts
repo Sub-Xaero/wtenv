@@ -2,6 +2,7 @@ import { spawnSync, execSync } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { info, warn, c } from "./log.js";
 import type { DatabaseConfig } from "./config.js";
 
 export type { DatabaseConfig };
@@ -37,7 +38,7 @@ export function provisionDatabase(city: string, config: DatabaseConfig): string 
   if (createResult.status !== 0) {
     const stderr = createResult.stderr?.toString() ?? "";
     if (stderr.includes("already exists")) {
-      console.log(`  Database '${dbName}' already exists — skipping`);
+      info(`database '${dbName}' already exists — skipping`);
       return databaseUrl(config, dbName);
     }
     throw new Error(`createdb failed: ${stderr.trim()}`);
@@ -46,7 +47,8 @@ export function provisionDatabase(city: string, config: DatabaseConfig): string 
   if (config.forkFrom) {
     const dumpFile = join(tmpdir(), `wtenv-${dbName}.dump`);
     try {
-      process.stdout.write(`  Forking '${config.forkFrom}' → '${dbName}'... `);
+      // Mirror the info() prefix exactly so the trailing "done" lands on the same indented line.
+      process.stdout.write(`    ${c.dim("→")} forking '${config.forkFrom}' → '${dbName}' ... `);
 
       execSync(
         `pg_dump -Fc -h ${config.host} -p ${config.port} -U ${config.username} ${config.forkFrom} > ${dumpFile}`,
@@ -58,12 +60,12 @@ export function provisionDatabase(city: string, config: DatabaseConfig): string 
         { env, stdio: "pipe" }
       );
 
-      console.log("done");
+      process.stdout.write("done\n");
     } finally {
       if (existsSync(dumpFile)) unlinkSync(dumpFile);
     }
   } else {
-    console.log(`  Created database '${dbName}'`);
+    info(`created database '${dbName}'`);
   }
 
   return databaseUrl(config, dbName);
@@ -80,9 +82,9 @@ export function teardownDatabase(city: string, config: DatabaseConfig): void {
 
   if (result.status !== 0) {
     const stderr = result.stderr?.toString() ?? "";
-    console.warn(`  dropdb warning: ${stderr.trim()}`);
+    warn(`dropdb: ${stderr.trim()}`);
   } else {
-    console.log(`  Dropped database '${dbName}'`);
+    info(`dropped database '${dbName}'`);
   }
 }
 

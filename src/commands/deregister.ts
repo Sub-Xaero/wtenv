@@ -4,12 +4,17 @@ import { loadConfig } from "../lib/config.js";
 import type { PluginContext } from "../lib/config.js";
 import { getWorktree, getWorktreePorts } from "../lib/registry.js";
 import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
+import { header, step, success, error } from "../lib/log.js";
 
 interface DeregisterOptions {
   cwd?: string;
   configRoot?: string;
   envFile?: string;
   id?: string; // direct id (bypasses git-dir lookup — used by `wtenv reset`)
+}
+
+function shortName(pluginName: string): string {
+  return pluginName.replace(/^wtenv:/, "");
 }
 
 export async function deregister(
@@ -25,7 +30,7 @@ export async function deregister(
 
   const wt = getWorktree(id);
   if (!wt) {
-    console.error(`No registered worktree found at '${cwd}'.`);
+    error(`No registered worktree found at '${cwd}'.`);
     process.exit(1);
   }
   const worktreeName = name ?? wt.name;
@@ -43,8 +48,14 @@ export async function deregister(
     config,
   };
 
+  header(`Deregistering '${worktreeName}' (${wt.city}.${config.tld})`);
+  console.log();
+
   for (const plugin of [...config.plugins].reverse()) {
-    await plugin.onDeregister?.(ctx);
+    if (!plugin.onDeregister) continue;
+    step(shortName(plugin.name));
+    await plugin.onDeregister(ctx);
+    console.log();
   }
 
   const envFilePath = join(cwd, opts.envFile ?? ".env.worktree");
@@ -52,5 +63,5 @@ export async function deregister(
     unlinkSync(envFilePath);
   }
 
-  console.log(`Deregistered worktree '${worktreeName}' (${wt.city}.${config.tld})`);
+  success(`Deregistered '${worktreeName}'`);
 }

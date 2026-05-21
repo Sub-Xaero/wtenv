@@ -2,6 +2,7 @@ import { writeFileSync, unlinkSync, existsSync, mkdirSync, readFileSync } from "
 import { execSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { requireSudoOrSkip, sudoExec } from "./sudo.js";
+import { info, warn } from "./log.js";
 const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
 // Domain-name regex used to defend the sudoers wildcards in /etc/resolver/*.
 // Restrict to plain DNS labels; rejects path traversal and shell-meaningful chars.
@@ -17,7 +18,7 @@ function stagingPath(domain) {
 // commands are `/bin/mkdir -p /etc/resolver` and `/bin/mv /var/tmp/wtenv-resolver-* /etc/resolver/*`.
 function installResolverFile(domain) {
     if (!DOMAIN_RE.test(domain)) {
-        console.warn(`  Refusing to write /etc/resolver/${domain} — domain name failed validation`);
+        warn(`refusing to write /etc/resolver/${domain} — domain name failed validation`);
         return false;
     }
     const staging = stagingPath(domain);
@@ -57,7 +58,7 @@ export function registerDnsmasq(worktreeName, tld) {
         flushDnsCache();
     }
     else {
-        console.warn(`  Could not create /etc/resolver/${domain} — DNS for *.${domain} may not work.`);
+        warn(`could not create /etc/resolver/${domain} — DNS for *.${domain} may not work`);
     }
 }
 export function deregisterDnsmasq(worktreeName, tld) {
@@ -90,7 +91,7 @@ export function registerProjectDnsmasq(projectName, baseDomain) {
     const tld = baseDomain.split(".").pop() ?? baseDomain;
     const tldResolverPath = `/etc/resolver/${tld}`;
     if (existsSync(tldResolverPath)) {
-        console.log(`  /etc/resolver/${baseDomain} skipped — covered by /etc/resolver/${tld}`);
+        info(`/etc/resolver/${baseDomain} skipped — covered by /etc/resolver/${tld}`);
         return;
     }
     const resolverPath = `/etc/resolver/${baseDomain}`;
@@ -103,7 +104,7 @@ export function registerProjectDnsmasq(projectName, baseDomain) {
         flushDnsCache();
     }
     else {
-        console.warn(`  Could not create /etc/resolver/${baseDomain} — DNS for *.${baseDomain} may not work.`);
+        warn(`could not create /etc/resolver/${baseDomain} — DNS for *.${baseDomain} may not work`);
     }
 }
 export function deregisterProjectDnsmasq(projectName, baseDomain) {

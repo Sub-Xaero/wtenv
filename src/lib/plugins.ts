@@ -6,6 +6,7 @@ import { registerCaddy, deregisterCaddy } from "./caddy.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./mdns.js";
 import { provisionDatabase, teardownDatabase } from "./database.js";
 import { allocateWorktree, releaseWorktree } from "./registry.js";
+import { info, cmd, warn } from "./log.js";
 import type { Plugin, PluginContext, DatabaseConfig } from "./config.js";
 
 export interface PortsPlugin extends Plugin {
@@ -32,9 +33,15 @@ export function ports(options?: { portRange?: [number, number] }): PortsPlugin {
       ctx.city = city;
       Object.assign(ctx.ports, allocated);
       ctx.envVars.WTENV_CITY = city;
+      info(`city: ${city}`);
+      const portList = Object.entries(allocated)
+        .map(([s, p]) => `${s}=${p}`)
+        .join("  ");
+      info(`ports: ${portList}`);
     },
     onDeregister(ctx) {
       releaseWorktree(ctx.worktreeId);
+      info(`released city '${ctx.city}' and ports`);
     },
   };
 }
@@ -44,14 +51,19 @@ export function dns(): Plugin {
     name: "wtenv:dns",
     onRegister(ctx) {
       registerDnsmasq(ctx.city, ctx.config.tld);
+      info(`wrote dnsmasq.d/${ctx.city}.conf`);
       // For tld: 'local', also publish the bare 2-label name via mDNS since /etc/resolver
       // files don't intercept bare .local queries before mDNSResponder.
       const bareLocals = bareLocalHostnames(`${ctx.city}.${ctx.config.tld}`, []);
-      if (bareLocals.length > 0) registerMdnsHosts(ctx.city, bareLocals);
+      if (bareLocals.length > 0) {
+        registerMdnsHosts(ctx.city, bareLocals);
+        info(`published mDNS for ${bareLocals.join(", ")}`);
+      }
     },
     onDeregister(ctx) {
       deregisterMdnsHosts(ctx.city);
       deregisterDnsmasq(ctx.city, ctx.config.tld);
+      info(`removed dnsmasq.d/${ctx.city}.conf`);
     },
   };
 }
@@ -64,9 +76,12 @@ export function caddy(): Plugin {
         Object.entries(ctx.config.services).map(([name, cfg]) => [name, cfg.hostname])
       );
       await registerCaddy(ctx.city, ctx.config.tld, ctx.ports, serviceHostnames);
+      const n = Object.keys(serviceHostnames).length;
+      info(`added ${n} route${n === 1 ? "" : "s"} for ${ctx.city}.${ctx.config.tld}`);
     },
     async onDeregister(ctx) {
       await deregisterCaddy(ctx.city, ctx.config.tld);
+      info(`removed routes for ${ctx.city}.${ctx.config.tld}`);
     },
   };
 }
@@ -75,6 +90,7 @@ export function serviceEnv(): Plugin {
   return {
     name: "wtenv:service-env",
     onRegister(ctx) {
+      let count = 0;
       for (const [name, cfg] of Object.entries(ctx.config.services)) {
         const port = ctx.ports[name];
         if (port === undefined || !cfg.env) continue;
@@ -92,8 +108,10 @@ export function serviceEnv(): Plugin {
         };
         for (const [key, template] of Object.entries(cfg.env)) {
           ctx.envVars[key] = template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+          count++;
         }
       }
+      info(`expanded ${count} env var${count === 1 ? "" : "s"}`);
     },
   };
 }
@@ -111,9 +129,11 @@ export function copyFiles(options: CopyFilesOptions): Plugin {
     name: "wtenv:copy-files",
     onRegister(ctx: PluginContext) {
       if (ctx.configRoot === ctx.cwd) {
-        console.warn("  copy-files: configRoot === cwd, skipping");
+        warn("configRoot === cwd, skipping copy-files");
         return;
       }
+      let copied = 0;
+      let skipped = 0;
       for (const entry of options.files) {
         const src = typeof entry === "string" ? entry : entry.src;
         const dest = typeof entry === "string" ? entry : (entry.dest ?? entry.src);
@@ -122,14 +142,19 @@ export function copyFiles(options: CopyFilesOptions): Plugin {
         const destPath = join(ctx.cwd, dest);
         if (!existsSync(srcPath)) {
           if (optional) {
-            console.log(`  copy-files: skipping optional '${src}' (not found)`);
+            info(`skipping optional '${src}' (not found)`);
+            skipped++;
             continue;
           }
           throw new Error(`copy-files: required file not found: ${srcPath}`);
         }
         mkdirSync(dirname(destPath), { recursive: true });
         cpSync(srcPath, destPath, { recursive: true });
+        copied++;
       }
+      const summary = `copied ${copied} file${copied === 1 ? "" : "s"}` +
+        (skipped > 0 ? ` (${skipped} optional skipped)` : "");
+      info(summary);
     },
   };
 }
@@ -153,10 +178,11 @@ export function shell(options: ShellOptions): Plugin {
 
 function runCommands(commands: string[], ctx: PluginContext): void {
   const env = { ...process.env, ...ctx.envVars };
-  for (const cmd of commands) {
-    const result = spawnSync(cmd, { shell: true, stdio: "inherit", cwd: ctx.cwd, env });
+  for (const command of commands) {
+    cmd(command);
+    const result = spawnSync(command, { shell: true, stdio: "inherit", cwd: ctx.cwd, env });
     if (result.status !== 0) {
-      throw new Error(`shell: command failed (exit ${result.status ?? "?"}): ${cmd}`);
+      throw new Error(`shell: command failed (exit ${result.status ?? "?"}): ${command}`);
     }
   }
 }
@@ -171,11 +197,13 @@ export function direnv(options: DirenvOptions = {}): Plugin {
     name: "wtenv:direnv",
     onRegister(ctx: PluginContext) {
       writeFileSync(join(ctx.cwd, ".envrc"), `dotenv ${envFile}\n`);
+      info(`wrote .envrc (dotenv ${envFile})`);
     },
     onDeregister(ctx: PluginContext) {
       const envrcPath = join(ctx.cwd, ".envrc");
       if (existsSync(envrcPath)) {
         unlinkSync(envrcPath);
+        info("removed .envrc");
       }
     },
   };

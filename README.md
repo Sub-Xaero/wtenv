@@ -400,6 +400,8 @@ wtenv project open [arg] [--print]   # arg is prepended as a literal subdomain o
 
 Port assignments and worktree metadata are stored in a SQLite registry at `~/.wtenv/registry.db`. On `register`, wtenv runs the plugin pipeline in order: ports are allocated from the registry, dnsmasq conf files are written to `/opt/homebrew/etc/dnsmasq.d/`, reverse-proxy routes are pushed to Caddy via its admin API (`localhost:2019`), any database is provisioned, and all accumulated env vars are written to `.env.worktree`. On `deregister`, the pipeline runs in reverse.
 
+`register` and `deregister` print a coloured plugin-by-plugin trace so wtenv's own output is visually distinct from subprocess output (bundle/yarn/rails). Set `NO_COLOR=1` (or pipe to a non-TTY) to get plain text.
+
 ## Backwards compatibility
 
 Plain `.wtenv.json` files still work — `normalizeConfig` automatically injects `defaultPlugins()` and converts a `database` field to a `postgres()` plugin. The `portRange` field in `.wtenv.json` is passed through to the ports plugin. No changes needed to existing JSON configs.
