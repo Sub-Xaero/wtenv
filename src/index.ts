@@ -10,6 +10,7 @@ import { reset } from "./commands/reset.js";
 import { list } from "./commands/list.js";
 import { status } from "./commands/status.js";
 import { projectInit, projectRegister, projectDeregister } from "./commands/project.js";
+import { open, projectOpen } from "./commands/open.js";
 
 const program = new Command();
 
@@ -122,6 +123,19 @@ program
   });
 
 program
+  .command("open [arg]")
+  .description("Open this worktree's domain (optionally with a subdomain or service name) in the default browser")
+  .option("--print", "Print the URL instead of opening it")
+  .action(async (arg: string | undefined, opts: { print?: boolean }) => {
+    try {
+      await open(arg, { print: opts.print });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
   .command("status")
   .description("Check dnsmasq and Caddy health")
   .action(async () => {
@@ -158,6 +172,20 @@ projectCmd
   .action(async (opts: { configRoot?: string }) => {
     try {
       await projectRegister({ configRoot: opts.configRoot });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+projectCmd
+  .command("open [arg]")
+  .description("Open the configured project baseDomain (optionally with a subdomain) in the default browser")
+  .option("--config-root <path>", "Directory containing .wtenv.config.js (default: git root)")
+  .option("--print", "Print the URL instead of opening it")
+  .action(async (arg: string | undefined, opts: { configRoot?: string; print?: boolean }) => {
+    try {
+      await projectOpen(arg, { configRoot: opts.configRoot, print: opts.print });
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);

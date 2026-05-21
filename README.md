@@ -355,9 +355,17 @@ wtenv list
 # Check dnsmasq and Caddy health
 wtenv status
 
-# Register/deregister static project domains (non-worktree)
+# Open this worktree's domain in the browser.
+# - No arg     → https://<city>.<tld>
+# - Service    → resolves the arg against config.services (e.g. `vite` with hostname `assets` → https://assets.<city>.<tld>)
+# - Otherwise  → treats the arg as a literal subdomain (e.g. `admin` → https://admin.<city>.<tld>)
+# Use --print to emit the URL instead of opening a browser (handy for shell pipelines).
+wtenv open [arg] [--print]
+
+# Register/deregister/open static project domains (non-worktree)
 wtenv project register [--config-root <path>]
 wtenv project deregister [--config-root <path>]
+wtenv project open [arg] [--print]   # arg is prepended as a literal subdomain of baseDomain
 ```
 
 `name`, `cwd`, and `configRoot` are all derived from git automatically. Pass `name` explicitly only if you need to override.
