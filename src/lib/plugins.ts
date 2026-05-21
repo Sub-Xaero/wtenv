@@ -135,6 +135,17 @@ export function copyFiles(options: CopyFilesOptions): Plugin {
       let copied = 0;
       let skipped = 0;
       for (const entry of options.files) {
+        const isObject = typeof entry === "object" && entry !== null && !Array.isArray(entry);
+        if (typeof entry !== "string" && !isObject) {
+          throw new Error(
+            `copy-files: entry must be a string or { src, dest?, optional? }, got: ${JSON.stringify(entry)}`
+          );
+        }
+        if (isObject && typeof entry.src !== "string") {
+          throw new Error(
+            `copy-files: entry is missing required 'src' string, got: ${JSON.stringify(entry)}`
+          );
+        }
         const src = typeof entry === "string" ? entry : entry.src;
         const dest = typeof entry === "string" ? entry : (entry.dest ?? entry.src);
         const optional = typeof entry !== "string" && (entry.optional ?? false);
