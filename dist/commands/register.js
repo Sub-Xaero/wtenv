@@ -2,7 +2,8 @@ import { writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { loadConfig } from "../lib/config.js";
 import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
-import { header, step, info, success, error, c } from "../lib/log.js";
+import { detectCaddyConflict } from "../lib/caddy.js";
+import { header, step, info, success, error, warn, c } from "../lib/log.js";
 function shortName(pluginName) {
     return pluginName.replace(/^wtenv:/, "");
 }
@@ -88,4 +89,9 @@ export async function register(name, opts = {}) {
     }
     const envRel = relative(cwd, envFilePath) || envFilePath;
     console.log(`    ${c.dim("env file:")} ${envRel}`);
+    const conflict = detectCaddyConflict();
+    if (conflict) {
+        console.log();
+        warn(conflict);
+    }
 }

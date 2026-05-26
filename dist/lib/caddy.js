@@ -1,4 +1,5 @@
 import * as http from "node:http";
+import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const CADDY_ADMIN_HOST = "localhost";
@@ -169,6 +170,26 @@ export async function setListener(ports) {
     const existing = await getConfig();
     const currentRoutes = existing?.apps?.http?.servers?.wtenv?.routes ?? [];
     await writeConfig(ports, currentRoutes);
+}
+// Returns a warning string if a second, conflicting Caddy is running, else null.
+// Two Caddy daemons (wtenv's, which runs with --resume, and Homebrew's `brew
+// services` caddy) compete for :443 and the :2019 admin. When both run, launchd
+// splits the ports between them and route writes can land on the instance that
+// isn't serving traffic — every worktree then shows a white page. We can't fix it
+// from register/deregister (it needs sudo), but we can flag it so a registration
+// that silently won't take effect doesn't look like a success.
+export function detectCaddyConflict() {
+    const out = spawnSync("bash", ["-c", "ps -axo pid=,command= | grep 'caddy run' | grep -v grep"], { stdio: "pipe" })
+        .stdout?.toString() ?? "";
+    const procs = out.trim().split("\n").filter(Boolean);
+    // Our daemon is the only one launched with --resume; anything else is a stray.
+    const strays = procs.filter((line) => !line.includes("--resume"));
+    if (strays.length === 0 && procs.length <= 1)
+        return null;
+    const pids = (strays.length > 0 ? strays : procs).map((line) => line.trim().split(/\s+/)[0]);
+    return (`${procs.length} Caddy processes running (pids ${pids.join(", ")}). A second Caddy ` +
+        `(usually Homebrew's \`brew services\` caddy) competes for :443 and the :2019 admin, ` +
+        `so these route changes may not take effect. Run \`wtenv setup\` to remove the conflict.`);
 }
 export async function isCaddyRunning() {
     try {

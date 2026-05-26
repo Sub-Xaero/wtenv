@@ -4,4 +4,5 @@ export declare function deregisterCaddy(worktreeName: string, tld: string): Prom
 export declare function registerProjectCaddy(projectName: string, domains: ProjectDomain[]): Promise<void>;
 export declare function deregisterProjectCaddy(projectName: string, domains: ProjectDomain[]): Promise<void>;
 export declare function setListener(ports: string[]): Promise<void>;
+export declare function detectCaddyConflict(): string | null;
 export declare function isCaddyRunning(): Promise<boolean>;

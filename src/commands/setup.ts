@@ -12,6 +12,7 @@ const DNSMASQ_CONF_DIR = "/opt/homebrew/etc/dnsmasq.d";
 const DNSMASQ_CONF = "/opt/homebrew/etc/dnsmasq.conf";
 const CADDY_DAEMON_PLIST = "/Library/LaunchDaemons/wtenv.caddy.plist";
 const CADDY_PID_FILE = "/tmp/wtenv-caddy.pid";
+const HOMEBREW_CADDY_PLIST = "/Library/LaunchDaemons/homebrew.mxcl.caddy.plist";
 
 // Run a command silently with progress framing. Suppresses subprocess output
 // so the user sees a clean "label... done/failed" line per setup substep —
@@ -31,6 +32,62 @@ function run(cmd: string, label: string, timeoutMs = 15_000): boolean {
 
 function isProcessRunning(name: string): boolean {
   return spawnSync("pgrep", ["-x", name], { stdio: "pipe" }).status === 0;
+}
+
+// PIDs of running `caddy run` processes that are NOT the wtenv daemon. Our daemon
+// is the only one launched with --resume, so anything without it is a leftover
+// (a brew service, or a manual `caddy run`) squatting on :443 or the :2019 admin.
+function strayCaddyPids(): string[] {
+  const out =
+    spawnSync("bash", ["-c", "ps -axo pid=,command= | grep 'caddy run' | grep -v grep"], { stdio: "pipe" })
+      .stdout?.toString() ?? "";
+  return out
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .filter((line) => !line.includes("--resume"))
+    .map((line) => line.trim().split(/\s+/)[0]);
+}
+
+// Tear down any Caddy that conflicts with the wtenv daemon. Homebrew's caddy
+// (from `brew services start caddy`) and wtenv's daemon both bind :443 and the
+// :2019 admin; when both run, launchd splits the ports between them and wtenv's
+// admin writes land on the instance that isn't serving traffic — every worktree
+// then returns an empty 200 (white page). Returns true if anything was removed,
+// so the caller knows to restart the wtenv daemon and reclaim the freed ports.
+function removeConflictingCaddy(): boolean {
+  let changed = false;
+
+  if (existsSync(HOMEBREW_CADDY_PLIST)) {
+    info("removing conflicting Homebrew caddy daemon");
+    // bootout stops it now; disable + rm stop it respawning on the next boot
+    // (a plain `launchctl unload` leaves the plist, so launchd reloads it).
+    spawnSync(
+      "sudo",
+      [
+        "bash",
+        "-c",
+        `launchctl bootout system/homebrew.mxcl.caddy 2>/dev/null; ` +
+          `launchctl disable system/homebrew.mxcl.caddy 2>/dev/null; ` +
+          `rm -f '${HOMEBREW_CADDY_PLIST}'`,
+      ],
+      { stdio: "pipe", timeout: 15_000 }
+    );
+    changed = true;
+  }
+
+  // A user-level `brew services` caddy (no-op if absent / already stopped).
+  spawnSync("brew", ["services", "stop", "caddy"], { stdio: "pipe", timeout: 15_000 });
+
+  // Kill any stray instance still holding ports after the daemon teardown.
+  const strays = strayCaddyPids();
+  if (strays.length > 0) {
+    info(`stopping ${strays.length} stray caddy process(es): ${strays.join(", ")}`);
+    spawnSync("sudo", ["kill", ...strays], { stdio: "pipe" });
+    changed = true;
+  }
+
+  return changed;
 }
 
 function isDnsmasqServingPort53(): boolean {
@@ -293,26 +350,34 @@ async function runSetup(): Promise<void> {
 </plist>
 `;
 
-  const caddyApiUp = await isCaddyRunning();
+  // Remove a conflicting Homebrew caddy before judging whether ours is healthy:
+  // isCaddyRunning() only proves *something* answers :2019, and that something may
+  // be the brew instance — so this must run unconditionally, not gated behind the
+  // "already running" check below.
+  const conflictRemoved = removeConflictingCaddy();
+
   const daemonIsCurrent =
     existsSync(CADDY_DAEMON_PLIST) &&
     readFileSync(CADDY_DAEMON_PLIST, "utf8").includes("--resume");
 
-  if (caddyApiUp && daemonIsCurrent) {
+  if (daemonIsCurrent && !conflictRemoved && (await isCaddyRunning())) {
     info("Caddy already running with wtenv daemon");
   } else {
-    // Unload brew's service if present to avoid port conflicts
-    if (existsSync("/Library/LaunchDaemons/homebrew.mxcl.caddy.plist")) {
-      spawnSync("sudo", ["launchctl", "unload", "/Library/LaunchDaemons/homebrew.mxcl.caddy.plist"], { stdio: "pipe" });
-    }
-
     const tmpDaemon = "/tmp/wtenv-caddy-daemon.plist";
     writeFileSync(tmpDaemon, daemonPlistContent);
 
+    // bootout + reload guarantees a fresh process that claims the now-free
+    // :443/:80/:2019 — the running daemon may have lost the port race to brew.
     info("installing Caddy LaunchDaemon (one sudo prompt)");
     const result = spawnSync(
       "sudo",
-      ["bash", "-c", `launchctl unload '${CADDY_DAEMON_PLIST}' 2>/dev/null; cp '${tmpDaemon}' '${CADDY_DAEMON_PLIST}' && launchctl load '${CADDY_DAEMON_PLIST}'`],
+      [
+        "bash",
+        "-c",
+        `launchctl bootout system '${CADDY_DAEMON_PLIST}' 2>/dev/null; ` +
+          `launchctl unload '${CADDY_DAEMON_PLIST}' 2>/dev/null; ` +
+          `cp '${tmpDaemon}' '${CADDY_DAEMON_PLIST}' && launchctl load '${CADDY_DAEMON_PLIST}'`,
+      ],
       { stdio: "inherit", timeout: 15_000 }
     );
     if (result.status !== 0) {

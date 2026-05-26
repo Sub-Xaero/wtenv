@@ -4,7 +4,8 @@ import { loadConfig } from "../lib/config.js";
 import type { PluginContext } from "../lib/config.js";
 import { getWorktree, getWorktreePorts } from "../lib/registry.js";
 import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
-import { header, step, success, error } from "../lib/log.js";
+import { detectCaddyConflict } from "../lib/caddy.js";
+import { header, step, success, error, warn } from "../lib/log.js";
 
 interface DeregisterOptions {
   cwd?: string;
@@ -64,4 +65,10 @@ export async function deregister(
   }
 
   success(`Deregistered '${worktreeName}'`);
+
+  const conflict = detectCaddyConflict();
+  if (conflict) {
+    console.log();
+    warn(conflict);
+  }
 }

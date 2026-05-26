@@ -4,7 +4,8 @@ import { loadConfig } from "../lib/config.js";
 import type { PluginContext } from "../lib/config.js";
 import type { PortsPlugin } from "../lib/plugins.js";
 import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
-import { header, step, info, success, error, c } from "../lib/log.js";
+import { detectCaddyConflict } from "../lib/caddy.js";
+import { header, step, info, success, error, warn, c } from "../lib/log.js";
 
 interface RegisterOptions {
   cwd?: string;
@@ -113,4 +114,10 @@ export async function register(
   }
   const envRel = relative(cwd, envFilePath) || envFilePath;
   console.log(`    ${c.dim("env file:")} ${envRel}`);
+
+  const conflict = detectCaddyConflict();
+  if (conflict) {
+    console.log();
+    warn(conflict);
+  }
 }
