@@ -1,6 +1,7 @@
-import { cpSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { parseEnv } from "node:util";
 import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
 import { registerCaddy, deregisterCaddy } from "./caddy.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./mdns.js";
@@ -154,8 +155,26 @@ export function shell(options) {
         },
     };
 }
+// The dotenv files direnv layers before the worktree env (`.env.worktree`).
+// Shared with the direnv() plugin so register-time and run-time stay in lockstep.
+const DOTENV_LAYERS = [".env", ".env.local"];
+// Reproduce direnv's runtime environment so shell commands see the same vars the
+// running app will. Layering matches the generated .envrc:
+// process.env < .env < .env.local < ctx.envVars (wtenv-generated values win last).
+// ctx.envVars stands in for the `.env.worktree` layer, which isn't written to disk
+// until after all plugins finish.
+function composeWorktreeEnv(ctx) {
+    const env = { ...process.env };
+    for (const file of DOTENV_LAYERS) {
+        const p = join(ctx.cwd, file);
+        if (existsSync(p))
+            Object.assign(env, parseEnv(readFileSync(p, "utf8")));
+    }
+    Object.assign(env, ctx.envVars);
+    return env;
+}
 function runCommands(commands, ctx) {
-    const env = { ...process.env, ...ctx.envVars };
+    const env = composeWorktreeEnv(ctx);
     for (const command of commands) {
         cmd(command);
         const result = spawnSync(command, { shell: true, stdio: "inherit", cwd: ctx.cwd, env });
@@ -169,7 +188,7 @@ export function direnv(options = {}) {
     // Later files override earlier ones in direnv's dotenv loader, so worktree
     // overrides local overrides base. Each line is skipped at eval time if the
     // file isn't present.
-    const sources = [".env", ".env.local", envFile];
+    const sources = [...DOTENV_LAYERS, envFile];
     return {
         name: "wtenv:direnv",
         onRegister(ctx) {
