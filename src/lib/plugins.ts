@@ -189,8 +189,9 @@ export function shell(options: ShellOptions): Plugin {
 }
 
 // The dotenv files direnv layers before the worktree env (`.env.worktree`).
-// Shared with the direnv() plugin so register-time and run-time stay in lockstep.
-const DOTENV_LAYERS = [".env", ".env.local"] as const;
+// Shared with the direnv() plugin and `wtenv env export` so register-time,
+// run-time, and the manual export path all stay in lockstep.
+export const DOTENV_LAYERS = [".env", ".env.local"] as const;
 
 // Reproduce direnv's runtime environment so shell commands see the same vars the
 // running app will. Layering matches the generated .envrc:

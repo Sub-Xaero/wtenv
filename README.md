@@ -170,6 +170,40 @@ Resolution order for `wtenv open <arg>`: **service name** → **alias name** →
 
 ---
 
+## The env stack
+
+wtenv layers three dotenv files, each overriding the one before it:
+
+| Layer | Written by | Purpose |
+|---|---|---|
+| `.env` | you (committed) | shared base config |
+| `.env.local` | you (gitignored) | personal/machine-local overrides |
+| `.env.worktree` | `wtenv register` | per-worktree ports, domain, `DATABASE_URL`, `WTENV_CITY`, etc. |
+
+The recommended way to load this stack into your shell is [direnv](https://direnv.net): `wtenv register` writes an `.envrc` that does `dotenv_if_exists` for all three files, so the environment is loaded automatically when you `cd` in.
+
+### Shells without direnv
+
+If you don't run direnv, `wtenv env` reads the same three files (in the same order) on demand:
+
+```bash
+# Load the full stack into the current shell
+eval "$(wtenv env export)"
+
+# Inspect the merged stack — shows which layer each value won from
+wtenv env show
+
+# Clear the vars the stack defines (the inverse of export)
+eval "$(wtenv env unset)"
+```
+
+- `export` / `unset` emit POSIX `export KEY='value'` / `unset KEY` lines on **stdout** (POSIX shells — bash, zsh); informational notes go to stderr so `eval` stays clean. Values are single-quoted, so spaces, URLs, and embedded quotes survive intact.
+- `export` deliberately emits **only** what the files define — it doesn't echo your existing environment back at itself.
+- This is a **point-in-time snapshot**, not a live overlay. If you `cd` away or edit the files, the loaded vars persist in that shell until you `wtenv env unset` (or start a new shell). direnv is the better choice if you want automatic, directory-scoped loading.
+- All three accept `--env-file <filename>` (default `.env.worktree`, matching `register`) and `--cwd <path>` (default: current directory).
+
+---
+
 ## Project domains
 
 The `project` config block registers **static, non-worktree domains** — fixed hostnames that point to specific local ports regardless of which worktree is active. This is useful for services that run once for the whole project (a shared API gateway, a shared asset server, a stub service, etc.).
@@ -389,6 +423,12 @@ wtenv open [arg] [--print]
 # Kill listening processes bound to this worktree's allocated ports.
 # Defaults to SIGTERM (graceful); use --force / -f for SIGKILL.
 wtenv kill [--force] [--dry-run]
+
+# Load / inspect / clear the .env + .env.local + .env.worktree stack
+# (for shells without direnv — all accept --env-file and --cwd)
+eval "$(wtenv env export)"   # export KEY=VALUE lines for the current shell
+wtenv env show               # human-readable merged stack with source layers
+eval "$(wtenv env unset)"    # unset every key the stack defines
 
 # Register/deregister/open/kill static project domains (non-worktree)
 wtenv project register [--config-root <path>]

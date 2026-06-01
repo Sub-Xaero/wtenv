@@ -12,6 +12,7 @@ import { status } from "./commands/status.js";
 import { projectInit, projectRegister, projectDeregister } from "./commands/project.js";
 import { open, projectOpen } from "./commands/open.js";
 import { kill, projectKill } from "./commands/kill.js";
+import { envExport, envUnset, envShow } from "./commands/env.js";
 
 const program = new Command();
 
@@ -156,6 +157,52 @@ program
   .action(async () => {
     try {
       await status();
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+const envCmd = program
+  .command("env")
+  .description("Inspect and export the worktree env stack");
+
+envCmd
+  .command("export")
+  .description("Print `export KEY=VALUE` for the .env/.env.local/.env.worktree stack — use: eval \"$(wtenv env export)\"")
+  .option("--env-file <filename>", "Worktree env file name", ".env.worktree")
+  .option("--cwd <path>", "Directory to read env files from (default: current directory)")
+  .action((opts: { envFile: string; cwd?: string }) => {
+    try {
+      envExport({ envFile: opts.envFile, cwd: opts.cwd });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+envCmd
+  .command("unset")
+  .description("Print `unset KEY` for every var the stack defines — use: eval \"$(wtenv env unset)\"")
+  .option("--env-file <filename>", "Worktree env file name", ".env.worktree")
+  .option("--cwd <path>", "Directory to read env files from (default: current directory)")
+  .action((opts: { envFile: string; cwd?: string }) => {
+    try {
+      envUnset({ envFile: opts.envFile, cwd: opts.cwd });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+envCmd
+  .command("show")
+  .description("Show the merged env stack with the layer each value came from")
+  .option("--env-file <filename>", "Worktree env file name", ".env.worktree")
+  .option("--cwd <path>", "Directory to read env files from (default: current directory)")
+  .action((opts: { envFile: string; cwd?: string }) => {
+    try {
+      envShow({ envFile: opts.envFile, cwd: opts.cwd });
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);

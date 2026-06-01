@@ -24,6 +24,7 @@ export interface ShellOptions {
     onDeregister?: string[];
 }
 export declare function shell(options: ShellOptions): Plugin;
+export declare const DOTENV_LAYERS: readonly [".env", ".env.local"];
 export interface DirenvOptions {
     envFile?: string;
 }
