@@ -145,18 +145,19 @@ function flushDnsCache(): void {
 }
 
 function reloadDnsmasq(): void {
-  // HUP only reloads the main conf, not conf-dir files — do a full restart via launchctl
-  const plist = `${process.env.HOME}/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist`;
-  const unload = spawnSync("launchctl", ["unload", plist], { stdio: "ignore" });
-  if (unload.status === 0) {
-    spawnSync("launchctl", ["load", plist], { stdio: "ignore" });
-  } else {
-    // Fall back to HUP if launchctl unload fails (e.g. not loaded yet)
-    try {
-      execSync("pkill -HUP dnsmasq", { stdio: "ignore" });
-    } catch {
-      // dnsmasq not running — not fatal, it will pick up config on next start
-    }
+  // A fresh process is required to pick up conf-dir changes — HUP only reloads the
+  // main conf, not the per-worktree files in dnsmasq.d. Use `kickstart -k`: it kills
+  // the running instance and restarts it from the already-bootstrapped launchd job,
+  // reliably leaving a live process. The legacy `launchctl unload` + `load` pair we
+  // used before frequently left the job bootstrapped-but-never-spawned (runs=0),
+  // silently killing DNS for every *.test name until someone kickstarted it by hand.
+  const uid = process.getuid?.() ?? 0;
+  const target = `gui/${uid}/homebrew.mxcl.dnsmasq`;
+  const kick = spawnSync("launchctl", ["kickstart", "-k", target], { stdio: "ignore" });
+  if (kick.status !== 0) {
+    // Job isn't bootstrapped yet — load it so RunAtLoad spawns the process.
+    const plist = `${process.env.HOME}/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist`;
+    spawnSync("launchctl", ["bootstrap", `gui/${uid}`, plist], { stdio: "ignore" });
   }
   // The system resolver may have cached NXDOMAIN for names dnsmasq now answers
   // (e.g. when /etc/resolver/<tld> was already in place). Flush so the new config
