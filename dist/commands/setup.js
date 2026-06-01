@@ -76,23 +76,6 @@ function removeConflictingCaddy() {
     }
     return changed;
 }
-function isDnsmasqServingPort53() {
-    // Check if anything is listening on UDP port 53
-    try {
-        execSync("lsof -i UDP:53 -sTCP:LISTEN 2>/dev/null | grep -q dnsmasq", { stdio: "pipe" });
-        return true;
-    }
-    catch {
-        // Try a DNS query to 127.0.0.1 port 53
-        try {
-            execSync("dig +time=1 +tries=1 @127.0.0.1 test.test >/dev/null 2>&1", { stdio: "pipe", timeout: 2000 });
-            return true;
-        }
-        catch {
-            return false;
-        }
-    }
-}
 const SUDOERS_FRAGMENT_PATH = "/etc/sudoers.d/wtenv";
 const SUDOERS_STAGING = "/var/tmp/wtenv-sudoers";
 function buildSudoersFragment(username) {
@@ -213,13 +196,18 @@ async function runSetup() {
     if (dnsmasqAsRoot) {
         run("sudo brew services stop dnsmasq", "stopping root dnsmasq service", 10_000);
     }
-    const dnsmasqUserRunning = spawnSync("brew", ["services", "list"], { stdio: "pipe" })
-        .stdout.toString().match(/dnsmasq\s+started/) !== null;
-    if (dnsmasqUserRunning) {
+    // Judge liveness by the actual process, not `brew services list` — brew reports
+    // a job as registered even when its process has died (crashed, or loaded but
+    // never spawned), which is exactly the state that makes every *.test name hang.
+    // And recover with `restart`, not `start`: `brew services start` is a no-op on
+    // an already-bootstrapped job (it warns "already started" and exits 0 without
+    // spawning anything), so it can't revive a dead dnsmasq — `restart` boots the
+    // job out and bootstraps a fresh process.
+    if (isProcessRunning("dnsmasq")) {
         info("dnsmasq already running as user service");
     }
     else {
-        run("brew services start dnsmasq", "starting dnsmasq as user service");
+        run("brew services restart dnsmasq", "starting dnsmasq as user service");
     }
     console.log();
     // --- /etc/resolver/test ---
