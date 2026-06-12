@@ -6,6 +6,7 @@ import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
 import { registerCaddy, deregisterCaddy } from "./caddy.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./mdns.js";
 import { provisionDatabase, teardownDatabase } from "./database.js";
+import { provisionRedis, teardownRedis } from "./redis.js";
 import { allocateWorktree, releaseWorktree } from "./registry.js";
 import { info, cmd, warn } from "./log.js";
 import type { Plugin, PluginContext, DatabaseConfig } from "./config.js";
@@ -335,6 +336,41 @@ export function postgres(options: DatabaseConfig): Plugin {
     },
     onDeregister(ctx: PluginContext) {
       teardownDatabase(ctx.city, options);
+    },
+  };
+}
+
+export interface RedisConfig {
+  // Service name key in ctx.ports. Must match a service entry in the wtenv config
+  // so that ports() allocates a port for it. Defaults to "redis".
+  serviceName?: string;
+  // Env var for the Redis URL written to .env.worktree. Defaults to "REDIS_URL".
+  envVar?: string;
+  // Optional separate env var for just the port number, e.g. "REDIS_PORT".
+  portEnvVar?: string;
+  // Extra args passed to redis-server, e.g. ["--maxmemory", "100mb"].
+  extraArgs?: string[];
+}
+
+export function redis(options: RedisConfig = {}): Plugin {
+  const { serviceName = "redis", envVar = "REDIS_URL", portEnvVar, extraArgs } = options;
+  return {
+    name: "wtenv:redis",
+    onRegister(ctx: PluginContext) {
+      const port = ctx.ports[serviceName];
+      if (port === undefined) {
+        throw new Error(
+          `redis: no port allocated for service '${serviceName}'. ` +
+          `Add '${serviceName}: { hostname: "" }' to your wtenv config's services.`
+        );
+      }
+      const url = provisionRedis(ctx.city, port, extraArgs);
+      ctx.envVars[envVar] = url;
+      if (portEnvVar) ctx.envVars[portEnvVar] = String(port);
+    },
+    onDeregister(ctx: PluginContext) {
+      const port = ctx.ports[serviceName];
+      if (port !== undefined) teardownRedis(ctx.city, port);
     },
   };
 }
