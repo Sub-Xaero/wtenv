@@ -229,11 +229,13 @@ async function runSetup(): Promise<void> {
     writeFileSync(DNSMASQ_CONF, content);
   }
 
-  // Stop root-level service if running, then start as user service
-  const dnsmasqAsRoot = spawnSync("sudo", ["brew", "services", "list"], { stdio: "pipe" })
-    .stdout.toString().includes("dnsmasq") ?? false;
+  // Stop root-level service if running, then start as user service.
+  // `sudo brew services list` shows system LaunchDaemons; grep for a started entry.
+  // Homebrew requires the non-sudo form even for root services in recent versions.
+  const rootServiceOutput = spawnSync("sudo", ["brew", "services", "list"], { stdio: "pipe" }).stdout.toString();
+  const dnsmasqAsRoot = /dnsmasq\s+started/.test(rootServiceOutput);
   if (dnsmasqAsRoot) {
-    run("sudo brew services stop dnsmasq", "stopping root dnsmasq service", 10_000);
+    run("brew services stop dnsmasq", "stopping root dnsmasq service", 10_000);
   }
 
   // Judge liveness by the actual process, not `brew services list` — brew reports
@@ -374,7 +376,21 @@ async function runSetup(): Promise<void> {
     }
   }
 
-  run("caddy trust", "trusting Caddy local CA (may prompt for password)", 30_000);
+  // caddy trust contacts the admin API (:2019) to read CA info — Caddy must be
+  // running before we call it, and launchctl load is async so we poll briefly.
+  process.stdout.write(`    ${c.dim("→")} waiting for Caddy admin API... `);
+  let caddyReady = false;
+  for (let i = 0; i < 15 && !caddyReady; i++) {
+    caddyReady = await isCaddyRunning();
+    if (!caddyReady) await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (caddyReady) {
+    process.stdout.write("ready\n");
+    run("caddy trust", "trusting Caddy local CA (may prompt for password)", 30_000);
+  } else {
+    process.stdout.write("timed out\n");
+    warn("Caddy admin API not responding — skipping caddy trust (run manually: caddy trust)");
+  }
 
   // Switch Caddy to HTTPS if port 443 is free (i.e. LocalCan has been quit)
   const port443InUse = spawnSync("lsof", ["-i", "TCP:443", "-sTCP:LISTEN"], { stdio: "pipe" }).stdout.toString().trim().length > 0;
