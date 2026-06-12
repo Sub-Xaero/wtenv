@@ -42,10 +42,12 @@ export async function list(): Promise<void> {
       const serviceCfg = config?.services[service];
       if (serviceCfg) {
         const hostname =
-          serviceCfg.hostname === "*"
+          serviceCfg.hostname === false
+            ? null
+            : serviceCfg.hostname === "*"
             ? `*.${wt.city}.${tld}`
             : `${serviceCfg.hostname}.${wt.city}.${tld}`;
-        info(`${service.padEnd(10)} :${port}   https://${hostname}`);
+        info(`${service.padEnd(10)} :${port}${hostname ? `   https://${hostname}` : ""}`);
       } else {
         info(`${service.padEnd(10)} :${port}`);
       }

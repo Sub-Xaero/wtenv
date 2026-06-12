@@ -27,10 +27,12 @@ export async function register(name, opts = {}) {
         step("would allocate");
         let nextPort = rangeStart;
         for (const [service, cfg] of Object.entries(config.services)) {
-            const hostname = cfg.hostname === "*"
-                ? `*.<city>.${config.tld}`
-                : `${cfg.hostname}.<city>.${config.tld}`;
-            info(`${service}: port ${nextPort}  →  https://${hostname}`);
+            const hostname = cfg.hostname === false
+                ? null
+                : cfg.hostname === "*"
+                    ? `*.<city>.${config.tld}`
+                    : `${cfg.hostname}.<city>.${config.tld}`;
+            info(`${service}: port ${nextPort}${hostname ? `  →  https://${hostname}` : ""}`);
             nextPort++;
         }
         console.log();
@@ -82,10 +84,12 @@ export async function register(name, opts = {}) {
     success(`Registered '${worktreeName}' as ${ctx.city}.${config.tld}`);
     for (const [service, port] of Object.entries(ctx.ports)) {
         const cfg = config.services[service];
-        const hostname = cfg.hostname === "*"
-            ? `*.${ctx.city}.${config.tld}`
-            : `${cfg.hostname}.${ctx.city}.${config.tld}`;
-        console.log(`    ${service.padEnd(10)} :${port}   https://${hostname}`);
+        const hostname = cfg.hostname === false
+            ? null
+            : cfg.hostname === "*"
+                ? `*.${ctx.city}.${config.tld}`
+                : `${cfg.hostname}.${ctx.city}.${config.tld}`;
+        console.log(`    ${service.padEnd(10)} :${port}${hostname ? `   https://${hostname}` : ""}`);
     }
     const envRel = relative(cwd, envFilePath) || envFilePath;
     console.log(`    ${c.dim("env file:")} ${envRel}`);

@@ -104,7 +104,7 @@ function buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames) {
         .filter(([, h]) => h === "*")
         .map(([svc]) => ports[svc])[0];
     for (const [service, hostname] of Object.entries(serviceHostnames)) {
-        if (hostname === "*")
+        if (hostname === "*" || hostname === false)
             continue;
         const port = ports[service];
         if (port === undefined)

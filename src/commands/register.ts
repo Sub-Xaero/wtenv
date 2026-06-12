@@ -45,10 +45,12 @@ export async function register(
     let nextPort = rangeStart;
     for (const [service, cfg] of Object.entries(config.services)) {
       const hostname =
-        cfg.hostname === "*"
+        cfg.hostname === false
+          ? null
+          : cfg.hostname === "*"
           ? `*.<city>.${config.tld}`
           : `${cfg.hostname}.<city>.${config.tld}`;
-      info(`${service}: port ${nextPort}  →  https://${hostname}`);
+      info(`${service}: port ${nextPort}${hostname ? `  →  https://${hostname}` : ""}`);
       nextPort++;
     }
     console.log();
@@ -107,10 +109,12 @@ export async function register(
   for (const [service, port] of Object.entries(ctx.ports)) {
     const cfg = config.services[service];
     const hostname =
-      cfg.hostname === "*"
+      cfg.hostname === false
+        ? null
+        : cfg.hostname === "*"
         ? `*.${ctx.city}.${config.tld}`
         : `${cfg.hostname}.${ctx.city}.${config.tld}`;
-    console.log(`    ${service.padEnd(10)} :${port}   https://${hostname}`);
+    console.log(`    ${service.padEnd(10)} :${port}${hostname ? `   https://${hostname}` : ""}`);
   }
   const envRel = relative(cwd, envFilePath) || envFilePath;
   console.log(`    ${c.dim("env file:")} ${envRel}`);
