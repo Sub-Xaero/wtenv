@@ -120,6 +120,16 @@ export function getWorktree(id) {
         db.close();
     }
 }
+export function getWorktreeByCity(city) {
+    const db = openDb();
+    try {
+        const row = db.prepare("SELECT * FROM worktrees WHERE city = ?").get(city);
+        return row ?? null;
+    }
+    finally {
+        db.close();
+    }
+}
 export function getWorktreePorts(id) {
     const db = openDb();
     try {

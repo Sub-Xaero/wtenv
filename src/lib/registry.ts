@@ -166,6 +166,16 @@ export function getWorktree(id: string): Worktree | null {
   }
 }
 
+export function getWorktreeByCity(city: string): Worktree | null {
+  const db = openDb();
+  try {
+    const row = db.prepare("SELECT * FROM worktrees WHERE city = ?").get(city) as Worktree | undefined;
+    return row ?? null;
+  } finally {
+    db.close();
+  }
+}
+
 export function getWorktreePorts(id: string): Record<string, number> {
   const db = openDb();
   try {

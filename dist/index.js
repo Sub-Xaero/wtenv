@@ -4,12 +4,13 @@ import { setup } from "./commands/setup.js";
 import { teardown } from "./commands/teardown.js";
 import { init } from "./commands/init.js";
 import { register } from "./commands/register.js";
-import { deregister } from "./commands/deregister.js";
+import { deregister, deregisterStale } from "./commands/deregister.js";
 import { reregister } from "./commands/reregister.js";
 import { reset } from "./commands/reset.js";
 import { list } from "./commands/list.js";
 import { ps } from "./commands/ps.js";
 import { status } from "./commands/status.js";
+import { doctor } from "./commands/doctor.js";
 import { projectInit, projectRegister, projectDeregister } from "./commands/project.js";
 import { open, projectOpen } from "./commands/open.js";
 import { kill, projectKill } from "./commands/kill.js";
@@ -76,9 +77,16 @@ program
     .command("deregister [name]")
     .description("Remove DNS config, Caddy routes, and release port allocations")
     .option("--env-file <filename>", "Env file name to remove", ".env.worktree")
+    .option("--city <city>", "Target a specific registered worktree by city name")
+    .option("--stale", "Remove all orphaned registry entries whose worktree directory no longer exists")
     .action(async (name, opts) => {
     try {
-        await deregister(name, { envFile: opts.envFile });
+        if (opts.stale) {
+            await deregisterStale({ envFile: opts.envFile });
+        }
+        else {
+            await deregister(name, { envFile: opts.envFile, city: opts.city });
+        }
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
@@ -167,6 +175,20 @@ program
     .action(async () => {
     try {
         await status();
+    }
+    catch (err) {
+        console.error(err instanceof Error ? err.message : err);
+        process.exit(1);
+    }
+});
+program
+    .command("doctor")
+    .description("Check health of the full wtenv setup: services, config, and registry")
+    .action(async () => {
+    try {
+        const anyFailed = await doctor();
+        if (anyFailed)
+            process.exit(1);
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
