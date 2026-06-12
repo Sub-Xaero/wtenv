@@ -408,6 +408,8 @@ wtenv register [name] [--env-file <filename>] [--dry-run]
 
 # Deregister a worktree
 wtenv deregister [name] [--env-file <filename>]
+wtenv deregister --city <city>    # target by city name without being in the directory
+wtenv deregister --stale          # remove all orphaned entries whose worktree no longer exists
 
 # Preview what register would do without making changes
 wtenv register --dry-run
@@ -417,6 +419,9 @@ wtenv list
 
 # Check dnsmasq and Caddy health
 wtenv status
+
+# Diagnose the full wtenv setup — services, config, and registry
+wtenv doctor
 
 # Open this worktree's domain in the browser.
 # - No arg     → https://<city>.<tld>
@@ -443,6 +448,16 @@ wtenv project kill [--force] [--dry-run]
 ```
 
 `name`, `cwd`, and `configRoot` are all derived from git automatically. Pass `name` explicitly only if you need to override.
+
+### `wtenv doctor`
+
+Runs a structured health check across three areas and reports each item as `✓ pass`, `⚠ warn`, or `✗ fail` with a suggested fix command:
+
+- **Infrastructure** — dnsmasq running, `/etc/resolver/test` present, Caddy admin API responding, DNS resolution of `*.test → 127.0.0.1`, PostgreSQL reachable via `pg_isready`
+- **Config** — config file found, loads without errors, at least one service defined, TLD set
+- **Registry** — for each registered worktree: git-dir still exists, dnsmasq conf file present, and any port conflicts (processes listening on allocated ports that don't belong to the worktree itself)
+
+Exits with code 1 if any check fails, 0 if all checks are pass or warn. Useful after OS upgrades, environment resets, or onboarding to a new machine.
 
 ---
 
