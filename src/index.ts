@@ -4,6 +4,7 @@ import { setup } from "./commands/setup.js";
 import { teardown } from "./commands/teardown.js";
 import { init } from "./commands/init.js";
 import { register } from "./commands/register.js";
+import { clone } from "./commands/clone.js";
 import { deregister } from "./commands/deregister.js";
 import { reregister } from "./commands/reregister.js";
 import { reset } from "./commands/reset.js";
@@ -68,6 +69,19 @@ program
   .action(async (name: string | undefined, opts: { envFile: string; dryRun: boolean }) => {
     try {
       await register(name, { envFile: opts.envFile, dryRun: opts.dryRun });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("clone <branch> [path]")
+  .description("Create a git worktree for <branch> and register it in one step")
+  .option("--env-file <filename>", "Env file name to write", ".env.worktree")
+  .action(async (branch: string, path: string | undefined, opts: { envFile: string }) => {
+    try {
+      await clone(branch, path, { envFile: opts.envFile });
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);
