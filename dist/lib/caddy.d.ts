@@ -5,4 +5,5 @@ export declare function registerProjectCaddy(projectName: string, domains: Proje
 export declare function deregisterProjectCaddy(projectName: string, domains: ProjectDomain[]): Promise<void>;
 export declare function setListener(ports: string[]): Promise<void>;
 export declare function detectCaddyConflict(): string | null;
+export declare function hasCaddyRoutes(city: string, tld: string): Promise<boolean>;
 export declare function isCaddyRunning(): Promise<boolean>;

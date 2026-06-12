@@ -288,6 +288,15 @@ export function detectCaddyConflict(): string | null {
   );
 }
 
+export async function hasCaddyRoutes(city: string, tld: string): Promise<boolean> {
+  const config = await getConfig();
+  if (!config) return false;
+  const routes = config.apps?.http?.servers?.wtenv?.routes ?? [];
+  return routes.some((r) =>
+    r.match?.some((m) => m.host?.some((h) => isWorktreeHost(h, city, tld)))
+  );
+}
+
 export async function isCaddyRunning(): Promise<boolean> {
   try {
     const { status } = await httpRequest({

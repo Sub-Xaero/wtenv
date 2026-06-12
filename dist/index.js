@@ -8,6 +8,7 @@ import { deregister } from "./commands/deregister.js";
 import { reregister } from "./commands/reregister.js";
 import { reset } from "./commands/reset.js";
 import { list } from "./commands/list.js";
+import { ps } from "./commands/ps.js";
 import { status } from "./commands/status.js";
 import { projectInit, projectRegister, projectDeregister } from "./commands/project.js";
 import { open, projectOpen } from "./commands/open.js";
@@ -115,6 +116,18 @@ program
     .action(async () => {
     try {
         await list();
+    }
+    catch (err) {
+        console.error(err instanceof Error ? err.message : err);
+        process.exit(1);
+    }
+});
+program
+    .command("ps")
+    .description("Show which registered worktrees have active processes")
+    .action(async () => {
+    try {
+        await ps();
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
