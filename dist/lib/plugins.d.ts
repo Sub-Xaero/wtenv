@@ -34,3 +34,10 @@ export interface DirenvOptions {
 }
 export declare function direnv(options?: DirenvOptions): Plugin;
 export declare function postgres(options: DatabaseConfig): Plugin;
+export interface RedisConfig {
+    serviceName?: string;
+    envVar?: string;
+    portEnvVar?: string;
+    extraArgs?: string[];
+}
+export declare function redis(options?: RedisConfig): Plugin;

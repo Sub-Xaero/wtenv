@@ -35,7 +35,7 @@ export async function open(arg, opts = {}) {
         const service = config.services[arg];
         const alias = config.aliases?.[arg];
         if (service) {
-            subdomain = service.hostname === "*" ? "" : service.hostname;
+            subdomain = service.hostname === "*" || service.hostname === false ? "" : service.hostname;
         }
         else if (alias !== undefined) {
             subdomain = alias;

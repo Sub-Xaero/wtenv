@@ -74,7 +74,7 @@ export function caddy(): Plugin {
   return {
     name: "wtenv:caddy",
     async onRegister(ctx) {
-      const serviceHostnames: Record<string, string> = Object.fromEntries(
+      const serviceHostnames: Record<string, string | false> = Object.fromEntries(
         Object.entries(ctx.config.services).map(([name, cfg]) => [name, cfg.hostname])
       );
       await registerCaddy(ctx.city, ctx.config.tld, ctx.ports, serviceHostnames);
@@ -96,7 +96,7 @@ export function serviceEnv(): Plugin {
       for (const [name, cfg] of Object.entries(ctx.config.services)) {
         const port = ctx.ports[name];
         if (port === undefined || !cfg.env) continue;
-        const hostname = cfg.hostname === "*" ? "" : cfg.hostname;
+        const hostname = cfg.hostname === "*" || cfg.hostname === false ? "" : cfg.hostname;
         const domain = `${ctx.city}.${ctx.config.tld}`;
         const fqdn = hostname ? `${hostname}.${domain}` : domain;
         const vars: Record<string, string> = {
@@ -361,7 +361,7 @@ export function redis(options: RedisConfig = {}): Plugin {
       if (port === undefined) {
         throw new Error(
           `redis: no port allocated for service '${serviceName}'. ` +
-          `Add '${serviceName}: { hostname: "" }' to your wtenv config's services.`
+          `Add '${serviceName}: { hostname: false }' to your wtenv config's services.`
         );
       }
       const url = provisionRedis(ctx.city, port, extraArgs);

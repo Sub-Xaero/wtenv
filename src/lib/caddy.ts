@@ -156,7 +156,7 @@ function buildWorktreeRoutes(
   worktreeName: string,
   tld: string,
   ports: Record<string, number>,
-  serviceHostnames: Record<string, string>
+  serviceHostnames: Record<string, string | false>
 ): CaddyRoute[] {
   const routes: CaddyRoute[] = [];
   const wildcardPort = Object.entries(serviceHostnames)
@@ -164,7 +164,7 @@ function buildWorktreeRoutes(
     .map(([svc]) => ports[svc])[0];
 
   for (const [service, hostname] of Object.entries(serviceHostnames)) {
-    if (hostname === "*") continue;
+    if (hostname === "*" || hostname === false) continue;
     const port = ports[service];
     if (port === undefined) continue;
     routes.push({
@@ -217,7 +217,7 @@ export async function registerCaddy(
   worktreeName: string,
   tld: string,
   ports: Record<string, number>,
-  serviceHostnames: Record<string, string>
+  serviceHostnames: Record<string, string | false>
 ): Promise<void> {
   const newRoutes = buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames);
   await patchRoutes(

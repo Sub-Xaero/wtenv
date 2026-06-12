@@ -34,10 +34,12 @@ export async function list() {
         for (const [service, port] of Object.entries(wt.ports)) {
             const serviceCfg = config?.services[service];
             if (serviceCfg) {
-                const hostname = serviceCfg.hostname === "*"
-                    ? `*.${wt.city}.${tld}`
-                    : `${serviceCfg.hostname}.${wt.city}.${tld}`;
-                info(`${service.padEnd(10)} :${port}   https://${hostname}`);
+                const hostname = serviceCfg.hostname === false
+                    ? null
+                    : serviceCfg.hostname === "*"
+                        ? `*.${wt.city}.${tld}`
+                        : `${serviceCfg.hostname}.${wt.city}.${tld}`;
+                info(`${service.padEnd(10)} :${port}${hostname ? `   https://${hostname}` : ""}`);
             }
             else {
                 info(`${service.padEnd(10)} :${port}`);

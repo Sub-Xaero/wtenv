@@ -1,5 +1,5 @@
 export interface ServiceConfig {
-    hostname: string;
+    hostname: string | false;
     env?: Record<string, string>;
 }
 export interface ProjectDomain {
