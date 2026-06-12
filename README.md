@@ -337,11 +337,16 @@ copyFiles({
     { src: 'config/database.yml' },                // same as string form
     { src: 'claude.local.md', optional: true },    // skipped if missing
     { src: 'config/base.yml', dest: 'config/local.yml' }, // rename on copy
+    { src: 'storage', optional: true, symlink: true },    // symlink instead of copy
   ],
 })
 ```
 
-No `onDeregister` — copied files are left in place.
+Entry options: `src` (required), `dest` (defaults to `src`), `optional` (skip if the source is missing instead of throwing), and `symlink`.
+
+With `symlink: true`, the entry is symlinked (`dest` → `src` in the main checkout) rather than copied — use it for shared, mutable directories that should stay in sync across worktrees, like Active Storage's `storage/`. Symlinks are left untouched if `dest` already exists (a real file/dir or a prior link), and are removed on deregister — but only if `dest` is still a symlink, so real data that replaced one is never deleted. Copied (non-symlink) files are left in place on deregister.
+
+Plugins run in array order on register (reverse order on deregister), so you can interleave multiple `copyFiles` and `shell` calls to control sequencing. Pass `label` to either to distinguish instances in the step log — e.g. `copyFiles({ label: 'storage', files: [...] })` shows as `copy-files:storage`.
 
 #### `postgres(options)`
 

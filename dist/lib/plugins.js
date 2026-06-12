@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseEnv } from "node:util";
@@ -103,27 +103,54 @@ export function serviceEnv() {
 export function defaultPlugins(opts) {
     return [ports(opts), dns(), caddy(), serviceEnv()];
 }
+function normalizeCopyEntry(entry) {
+    const isObject = typeof entry === "object" && entry !== null && !Array.isArray(entry);
+    if (typeof entry !== "string" && !isObject) {
+        throw new Error(`copy-files: entry must be a string or { src, dest?, optional?, symlink? }, got: ${JSON.stringify(entry)}`);
+    }
+    if (isObject && typeof entry.src !== "string") {
+        throw new Error(`copy-files: entry is missing required 'src' string, got: ${JSON.stringify(entry)}`);
+    }
+    return {
+        src: typeof entry === "string" ? entry : entry.src,
+        dest: typeof entry === "string" ? entry : (entry.dest ?? entry.src),
+        optional: typeof entry !== "string" && (entry.optional ?? false),
+        symlink: typeof entry !== "string" && (entry.symlink ?? false),
+    };
+}
+// lstat-based existence checks so we inspect the link itself, never its target:
+// `pathPresent` is true for a real file/dir or any symlink (incl. broken ones),
+// and `isSymlink` distinguishes links we created from real worktree data.
+function pathPresent(p) {
+    try {
+        lstatSync(p);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+function isSymlink(p) {
+    try {
+        return lstatSync(p).isSymbolicLink();
+    }
+    catch {
+        return false;
+    }
+}
 export function copyFiles(options) {
     return {
-        name: "wtenv:copy-files",
+        name: options.label ? `wtenv:copy-files:${options.label}` : "wtenv:copy-files",
         onRegister(ctx) {
             if (ctx.configRoot === ctx.cwd) {
                 warn("configRoot === cwd, skipping copy-files");
                 return;
             }
             let copied = 0;
+            let linked = 0;
             let skipped = 0;
             for (const entry of options.files) {
-                const isObject = typeof entry === "object" && entry !== null && !Array.isArray(entry);
-                if (typeof entry !== "string" && !isObject) {
-                    throw new Error(`copy-files: entry must be a string or { src, dest?, optional? }, got: ${JSON.stringify(entry)}`);
-                }
-                if (isObject && typeof entry.src !== "string") {
-                    throw new Error(`copy-files: entry is missing required 'src' string, got: ${JSON.stringify(entry)}`);
-                }
-                const src = typeof entry === "string" ? entry : entry.src;
-                const dest = typeof entry === "string" ? entry : (entry.dest ?? entry.src);
-                const optional = typeof entry !== "string" && (entry.optional ?? false);
+                const { src, dest, optional, symlink } = normalizeCopyEntry(entry);
                 const srcPath = join(ctx.configRoot, src);
                 const destPath = join(ctx.cwd, dest);
                 if (!existsSync(srcPath)) {
@@ -134,19 +161,54 @@ export function copyFiles(options) {
                     }
                     throw new Error(`copy-files: required file not found: ${srcPath}`);
                 }
-                mkdirSync(dirname(destPath), { recursive: true });
-                cpSync(srcPath, destPath, { recursive: true });
-                copied++;
+                if (symlink) {
+                    // Never clobber a path the worktree already has — a real file/dir or a
+                    // pre-existing link (e.g. from a re-register). Leave it untouched.
+                    if (pathPresent(destPath)) {
+                        info(`skipping symlink '${dest}' (already exists)`);
+                        skipped++;
+                        continue;
+                    }
+                    mkdirSync(dirname(destPath), { recursive: true });
+                    symlinkSync(srcPath, destPath);
+                    linked++;
+                }
+                else {
+                    mkdirSync(dirname(destPath), { recursive: true });
+                    cpSync(srcPath, destPath, { recursive: true });
+                    copied++;
+                }
             }
-            const summary = `copied ${copied} file${copied === 1 ? "" : "s"}` +
-                (skipped > 0 ? ` (${skipped} optional skipped)` : "");
-            info(summary);
+            const parts = [`copied ${copied} file${copied === 1 ? "" : "s"}`];
+            if (linked > 0)
+                parts.push(`linked ${linked}`);
+            if (skipped > 0)
+                parts.push(`${skipped} skipped`);
+            info(parts.join(", "));
+        },
+        onDeregister(ctx) {
+            if (ctx.configRoot === ctx.cwd)
+                return;
+            let removed = 0;
+            for (const entry of options.files) {
+                const { dest, symlink } = normalizeCopyEntry(entry);
+                if (!symlink)
+                    continue;
+                const destPath = join(ctx.cwd, dest);
+                // Only remove our own symlinks — never a real file/dir that replaced one.
+                if (isSymlink(destPath)) {
+                    unlinkSync(destPath);
+                    removed++;
+                }
+            }
+            if (removed > 0)
+                info(`removed ${removed} symlink${removed === 1 ? "" : "s"}`);
         },
     };
 }
 export function shell(options) {
     return {
-        name: "wtenv:shell",
+        name: options.label ? `wtenv:shell:${options.label}` : "wtenv:shell",
         onRegister(ctx) {
             runCommands(options.onRegister ?? [], ctx);
         },
