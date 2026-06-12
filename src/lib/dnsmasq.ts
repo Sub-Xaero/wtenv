@@ -1,4 +1,4 @@
-import { writeFileSync, unlinkSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFileSync, unlinkSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { execSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { requireSudoOrSkip, sudoExec } from "./sudo.js";
@@ -128,6 +128,17 @@ export function deregisterProjectDnsmasq(projectName: string, baseDomain: string
     if (!requireSudoOrSkip(`/etc/resolver/${baseDomain} cleanup`)) return;
     removeResolverFile(baseDomain);
   }
+}
+
+export function hasDnsmasqConf(worktreeName: string): boolean {
+  return existsSync(confPath(worktreeName));
+}
+
+export function listDnsmasqConfNames(): string[] {
+  if (!existsSync(DNSMASQ_CONF_DIR)) return [];
+  return readdirSync(DNSMASQ_CONF_DIR)
+    .filter((f) => f.endsWith(".conf"))
+    .map((f) => f.slice(0, -5));
 }
 
 export function isDnsmasqRunning(): boolean {

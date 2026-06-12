@@ -191,6 +191,13 @@ export function detectCaddyConflict() {
         `(usually Homebrew's \`brew services\` caddy) competes for :443 and the :2019 admin, ` +
         `so these route changes may not take effect. Run \`wtenv setup\` to remove the conflict.`);
 }
+export async function hasCaddyRoutes(city, tld) {
+    const config = await getConfig();
+    if (!config)
+        return false;
+    const routes = config.apps?.http?.servers?.wtenv?.routes ?? [];
+    return routes.some((r) => r.match?.some((m) => m.host?.some((h) => isWorktreeHost(h, city, tld))));
+}
 export async function isCaddyRunning() {
     try {
         const { status } = await httpRequest({

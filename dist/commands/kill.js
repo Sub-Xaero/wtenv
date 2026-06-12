@@ -1,34 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { loadConfig } from "../lib/config.js";
 import { getWorktree, getWorktreePorts } from "../lib/registry.js";
 import { gitRoot, worktreeId, worktreeRoot } from "../lib/git.js";
 import { header, info, success, warn, error, c } from "../lib/log.js";
-// Returns the listening PIDs for `port` (sTCP:LISTEN only — skips transient client sockets).
-// lsof exits 1 with empty output when nothing matches; that's not an error here.
-function listenersOn(port) {
-    const r = spawnSync("lsof", ["-ti", `tcp:${port}`, "-sTCP:LISTEN"], {
-        stdio: ["ignore", "pipe", "ignore"],
-    });
-    const out = r.stdout?.toString().trim();
-    if (!out)
-        return [];
-    return out.split("\n").filter(Boolean).map(Number);
-}
-// `ps -p <pids> -o pid=,comm=` returns one line per PID with the executable name (e.g. "ruby", "node").
-function processNames(pids) {
-    const names = new Map();
-    if (pids.length === 0)
-        return names;
-    const r = spawnSync("ps", ["-p", pids.join(","), "-o", "pid=,comm="], {
-        stdio: ["ignore", "pipe", "ignore"],
-    });
-    for (const line of (r.stdout?.toString().trim() ?? "").split("\n")) {
-        const m = line.match(/^\s*(\d+)\s+(.+)$/);
-        if (m)
-            names.set(Number(m[1]), m[2].trim().split("/").pop() ?? m[2].trim());
-    }
-    return names;
-}
+import { listenersOn, processNames } from "../lib/process.js";
 function gather(portsByLabel) {
     const all = [];
     for (const [label, port] of Object.entries(portsByLabel)) {
