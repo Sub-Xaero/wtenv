@@ -7,6 +7,24 @@ import { isCaddyRunning } from "../lib/caddy.js";
 import { loadConfig } from "../lib/config.js";
 import { listWorktrees } from "../lib/registry.js";
 import { header, step, info, c, success, warn, error } from "../lib/log.js";
+function listeningPid(port) {
+    const result = spawnSync("lsof", ["-i", `:${port}`, "-sTCP:LISTEN", "-n", "-P", "-Fp"], {
+        encoding: "utf8",
+    });
+    if (result.status !== 0 || !result.stdout.trim())
+        return null;
+    const match = result.stdout.match(/^p(\d+)/m);
+    return match ? parseInt(match[1], 10) : null;
+}
+function processCwd(pid) {
+    const result = spawnSync("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], {
+        encoding: "utf8",
+    });
+    if (result.status !== 0)
+        return null;
+    const match = result.stdout.match(/^n(.+)$/m);
+    return match ? match[1].trim() : null;
+}
 function printCheck(label, result, detail, fix) {
     const icon = result === "pass" ? c.green("✓") : result === "warn" ? c.yellow("⚠") : c.red("✗");
     const suffix = detail ? `  ${c.dim(`(${detail})`)}` : "";
@@ -96,12 +114,15 @@ export async function doctor() {
             const confExists = existsSync(confFile);
             check(`${label} — dnsmasq conf present`, confExists ? "pass" : "fail", confExists ? undefined : confFile, `re-register with 'wtenv reregister' or cleanup with 'wtenv deregister --city ${wt.city}'`);
             for (const [service, port] of Object.entries(wt.ports)) {
-                const lsof = spawnSync("lsof", ["-i", `:${port}`, "-sTCP:LISTEN", "-n", "-P"], {
-                    encoding: "utf8",
-                });
-                if (lsof.status === 0 && lsof.stdout.trim()) {
-                    check(`${label} — ${service} port ${port}`, "warn", "something already listening — may conflict on start");
-                }
+                const pid = listeningPid(port);
+                if (pid === null)
+                    continue;
+                const cwd = processCwd(pid);
+                const ownProcess = cwd !== null &&
+                    (cwd === wt.project_root || cwd.startsWith(wt.project_root + "/"));
+                if (ownProcess)
+                    continue;
+                check(`${label} — ${service} port ${port}`, "warn", cwd ? `in use by process running from ${cwd}` : "in use by unknown process");
             }
         }
     }
