@@ -103,6 +103,7 @@ export function serviceEnv(): Plugin {
           port: String(port),
           worktree: ctx.worktreeName,
           domain: ctx.domain,
+          city: ctx.domain,
           tld: ctx.config.tld,
           hostname,
           host,
