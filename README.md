@@ -7,7 +7,7 @@ Per-worktree DNS namespaces, HTTPS reverse proxying, port allocation, and databa
 When you work across multiple git worktrees (e.g. `main`, `feature/payments`, `fix/auth`), each needs its own ports, local domain, and optionally its own database. wtenv automates all of that through a plugin pipeline defined in a `.wtenv.config.js` at your git root:
 
 - **Port allocation** — assigns unique ports to each service per worktree, no conflicts
-- **DNS** — checks out a city from a bundled pool and routes `*.{city}.test` to localhost via dnsmasq. `WTENV_CITY` is auto-exported so processes can identify their own domain.
+- **DNS** — checks out an animal name from a bundled pool and routes `*.{domain}.test` to localhost via dnsmasq. `WTENV_DOMAIN` is auto-exported so processes can identify their own domain.
 - **HTTPS** — configures Caddy to reverse-proxy each service with a trusted local certificate
 - **File copying** — seeds credentials and config files from the main checkout into each worktree
 - **Database provisioning** — creates and optionally forks an isolated PostgreSQL database per worktree
@@ -68,7 +68,7 @@ import { defineConfig, defaultPlugins, copyFiles, shell, postgres } from 'wtenv'
 export default defineConfig({
   tld: 'test',
   services: {
-    web:  { hostname: '*',      env: { PORT: '{port}', APP_DOMAIN: '{domain}' } },
+    web:  { hostname: '*',      env: { PORT: '{port}', APP_DOMAIN: '{host}' } },
     vite: { hostname: 'assets', env: { VITE_RUBY_PORT: '{port}', VITE_HMR_HOST: '{fqdn}' } },
   },
   plugins: [
@@ -81,7 +81,7 @@ export default defineConfig({
       ],
     }),
     postgres({
-      namePattern: 'myapp_development_{city}',
+      namePattern: 'myapp_development_{domain}',
       forkFrom:    'myapp_development',
       host: 'localhost', port: 5432,
       username: 'myapp', password: 'secret',
@@ -127,21 +127,21 @@ The `env` map on each service supports these template variables:
 |---|---|
 | `{port}` | Allocated port number |
 | `{worktree}` | Display name (worktree directory basename — may be unstable if conductor renames the directory) |
-| `{city}` | Checked-out city from the bundled pool — also auto-exported as `WTENV_CITY` |
+| `{domain}` | Checked-out animal name — also auto-exported as `WTENV_DOMAIN` |
 | `{tld}` | Configured TLD (e.g. `test`) |
-| `{domain}` | `{city}.{tld}` |
+| `{host}` | `{domain}.{tld}` |
 | `{hostname}` | Service's hostname value (empty string for `"*"`) |
-| `{fqdn}` | `{hostname}.{domain}`, or just `{domain}` when hostname is `"*"` |
+| `{fqdn}` | `{hostname}.{host}`, or just `{host}` when hostname is `"*"` |
 
-`WTENV_CITY` is always written into `.env.worktree` so consuming processes can identify their domain without templating it themselves.
+`WTENV_DOMAIN` is always written into `.env.worktree` so consuming processes can identify their domain without templating it themselves.
 
-Example — a service on subdomain `assets`, city `almaty`, `tld=test`, port `3101`:
+Example — a service on subdomain `assets`, domain `otter`, `tld=test`, port `3101`:
 
 ```js
 env: {
   VITE_RUBY_PORT: '{port}',         // → "3101"
-  VITE_HMR_HOST:  '{fqdn}',         // → "assets.almaty.test"
-  ASSETS_URL:     'https://{fqdn}', // → "https://assets.almaty.test"
+  VITE_HMR_HOST:  '{fqdn}',         // → "assets.otter.test"
+  ASSETS_URL:     'https://{fqdn}', // → "https://assets.otter.test"
 }
 ```
 
@@ -162,7 +162,7 @@ defineConfig({
 Then:
 
 ```bash
-wtenv open pro             # https://pro-company.dev.<city>.<tld>
+wtenv open pro             # https://pro-company.dev.<domain>.<tld>
 wtenv project open pro     # https://pro-company.dev.<baseDomain>
 ```
 
@@ -178,7 +178,7 @@ wtenv layers three dotenv files, each overriding the one before it:
 |---|---|---|
 | `.env` | you (committed) | shared base config |
 | `.env.local` | you (gitignored) | personal/machine-local overrides |
-| `.env.worktree` | `wtenv register` | per-worktree ports, domain, `DATABASE_URL`, `WTENV_CITY`, etc. |
+| `.env.worktree` | `wtenv register` | per-worktree ports, domain, `DATABASE_URL`, `WTENV_DOMAIN`, etc. |
 
 The recommended way to load this stack into your shell is [direnv](https://direnv.net): `wtenv register` writes an `.envrc` that does `dotenv_if_exists` for all three files, so the environment is loaded automatically when you `cd` in.
 
@@ -259,7 +259,7 @@ Both commands read from `.wtenv.config.js` (or `.wtenv.json`) at the git root. P
 | | `wtenv register` | `wtenv project register` |
 |---|---|---|
 | Ports | Dynamically allocated per worktree | Fixed — you specify the port |
-| DNS | `*.{city}.{tld}` | `*.{baseDomain}` |
+| DNS | `*.{domain}.{tld}` | `*.{baseDomain}` |
 | `.local` support | ✅ yes (sudo on each register) | ✅ yes (sudo on each register) |
 | Intended for | Per-branch environments | Shared/singleton services |
 | Persisted in registry | Yes | No |
@@ -280,7 +280,7 @@ interface Plugin {
 interface PluginContext {
   worktreeId:   string;           // stable identifier (worktree git-dir path — survives directory renames)
   worktreeName: string;           // display name (cwd basename at register time)
-  city:         string;           // checked-out city — used as {city}.{tld} DNS domain (populated by ports())
+  domain:       string;           // checked-out animal name — used as {domain}.{tld} DNS domain (populated by ports())
   cwd:          string;           // worktree directory
   configRoot:   string;           // main checkout directory
   ports:        Record<string, number>;  // mutable — populated by ports()
@@ -295,7 +295,7 @@ Plugins run **in order** on register and **in reverse** on deregister (stack dis
 
 #### `ports(opts?)`
 
-Allocates a registry row for the worktree: assigns ports for each service in `config.services` from `portRange`, checks out an unused city from the bundled pool (used as the DNS domain), and writes `WTENV_CITY` to `ctx.envVars`. Releases everything on deregister. **Must come before any plugin that reads `ctx.ports` or `ctx.city`.**
+Allocates a registry row for the worktree: assigns ports for each service in `config.services` from `portRange`, checks out an unused animal name from the bundled pool (used as the DNS domain), and writes `WTENV_DOMAIN` to `ctx.envVars`. Releases everything on deregister. **Must come before any plugin that reads `ctx.ports` or `ctx.domain`.**
 
 The registry is keyed by the worktree's git-dir path (stable across directory renames), not by the directory basename — so renaming a conductor worktree doesn't orphan its registration.
 
@@ -309,7 +309,7 @@ Writes a dnsmasq config file routing `*.{worktreeName}.{tld}` to `127.0.0.1`. Re
 
 #### `caddy()`
 
-Pushes reverse-proxy routes to Caddy's admin API — one route per service, using each service's hostname together with the worktree's checked-out city to determine the domain pattern (`{hostname}.{city}.{tld}`). Removes routes on deregister.
+Pushes reverse-proxy routes to Caddy's admin API — one route per service, using each service's hostname together with the worktree's domain to determine the pattern (`{hostname}.{domain}.{tld}`). Removes routes on deregister.
 
 #### `serviceEnv()`
 
@@ -354,8 +354,8 @@ Creates a PostgreSQL database for the worktree on register. Optionally forks an 
 
 ```js
 postgres({
-  namePattern: 'myapp_development_{city}', // {city} → sanitized checked-out city ({worktree} kept as legacy alias)
-  forkFrom:    'myapp_development',            // optional: clone this database
+  namePattern: 'myapp_development_{domain}', // {domain} → sanitized animal name ({city}/{worktree} kept as legacy aliases)
+  forkFrom:    'myapp_development',           // optional: clone this database
   host:        'localhost',
   port:        5432,
   username:    'myapp',
@@ -408,7 +408,7 @@ wtenv register [name] [--env-file <filename>] [--dry-run]
 
 # Deregister a worktree
 wtenv deregister [name] [--env-file <filename>]
-wtenv deregister --city <city>    # target by city name without being in the directory
+wtenv deregister --domain <name>  # target by domain name without being in the directory
 wtenv deregister --stale          # remove all orphaned entries whose worktree no longer exists
 
 # Preview what register would do without making changes
@@ -424,9 +424,9 @@ wtenv status
 wtenv doctor
 
 # Open this worktree's domain in the browser.
-# - No arg     → https://<city>.<tld>
-# - Service    → resolves the arg against config.services (e.g. `vite` with hostname `assets` → https://assets.<city>.<tld>)
-# - Otherwise  → treats the arg as a literal subdomain (e.g. `admin` → https://admin.<city>.<tld>)
+# - No arg     → https://<domain>.<tld>
+# - Service    → resolves the arg against config.services (e.g. `vite` with hostname `assets` → https://assets.<domain>.<tld>)
+# - Otherwise  → treats the arg as a literal subdomain (e.g. `admin` → https://admin.<domain>.<tld>)
 # Use --print to emit the URL instead of opening a browser (handy for shell pipelines).
 wtenv open [arg] [--print]
 
