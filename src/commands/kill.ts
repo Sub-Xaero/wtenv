@@ -79,8 +79,8 @@ export async function kill(opts: KillOptions = {}): Promise<void> {
     .join("  ");
 
   const headerText = opts.dryRun
-    ? `Dry run: would kill processes on '${wt.name}' (${wt.city}.${config.tld})`
-    : `Killing processes on '${wt.name}' (${wt.city}.${config.tld})`;
+    ? `Dry run: would kill processes on '${wt.name}' (${wt.domain}.${config.tld})`
+    : `Killing processes on '${wt.name}' (${wt.domain}.${config.tld})`;
   header(headerText);
   console.log(`    ${c.dim("ports:")} ${portSummary}`);
   console.log();

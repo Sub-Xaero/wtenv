@@ -15,9 +15,9 @@ export interface PortsPlugin extends Plugin {
   portRange: [number, number];
 }
 
-// Allocates the worktree's registry row, including a checked-out city from the
-// bundled pool and per-service ports. Also seeds `ctx.city` and exports
-// `WTENV_CITY` so downstream plugins (and the consuming app) can read it.
+// Allocates the worktree's registry row, including a checked-out animal name
+// from the bundled pool and per-service ports. Also seeds `ctx.domain` and
+// exports `WTENV_DOMAIN` so downstream plugins (and the consuming app) can read it.
 export function ports(options?: { portRange?: [number, number] }): PortsPlugin {
   const portRange: [number, number] = options?.portRange ?? [3100, 4099];
   return {
@@ -25,17 +25,17 @@ export function ports(options?: { portRange?: [number, number] }): PortsPlugin {
     portRange,
     onRegister(ctx) {
       const serviceNames = Object.keys(ctx.config.services);
-      const { city, ports: allocated } = allocateWorktree(
+      const { domain, ports: allocated } = allocateWorktree(
         ctx.worktreeId,
         ctx.worktreeName,
         ctx.cwd,
         serviceNames,
         portRange
       );
-      ctx.city = city;
+      ctx.domain = domain;
       Object.assign(ctx.ports, allocated);
-      ctx.envVars.WTENV_CITY = city;
-      info(`city: ${city}`);
+      ctx.envVars.WTENV_DOMAIN = domain;
+      info(`domain: ${domain}`);
       const portList = Object.entries(allocated)
         .map(([s, p]) => `${s}=${p}`)
         .join("  ");
@@ -43,7 +43,7 @@ export function ports(options?: { portRange?: [number, number] }): PortsPlugin {
     },
     onDeregister(ctx) {
       releaseWorktree(ctx.worktreeId);
-      info(`released city '${ctx.city}' and ports`);
+      info(`released domain '${ctx.domain}' and ports`);
     },
   };
 }
@@ -52,20 +52,20 @@ export function dns(): Plugin {
   return {
     name: "wtenv:dns",
     onRegister(ctx) {
-      registerDnsmasq(ctx.city, ctx.config.tld);
-      info(`wrote dnsmasq.d/${ctx.city}.conf`);
+      registerDnsmasq(ctx.domain, ctx.config.tld);
+      info(`wrote dnsmasq.d/${ctx.domain}.conf`);
       // For tld: 'local', also publish the bare 2-label name via mDNS since /etc/resolver
       // files don't intercept bare .local queries before mDNSResponder.
-      const bareLocals = bareLocalHostnames(`${ctx.city}.${ctx.config.tld}`, []);
+      const bareLocals = bareLocalHostnames(`${ctx.domain}.${ctx.config.tld}`, []);
       if (bareLocals.length > 0) {
-        registerMdnsHosts(ctx.city, bareLocals);
+        registerMdnsHosts(ctx.domain, bareLocals);
         info(`published mDNS for ${bareLocals.join(", ")}`);
       }
     },
     onDeregister(ctx) {
-      deregisterMdnsHosts(ctx.city);
-      deregisterDnsmasq(ctx.city, ctx.config.tld);
-      info(`removed dnsmasq.d/${ctx.city}.conf`);
+      deregisterMdnsHosts(ctx.domain);
+      deregisterDnsmasq(ctx.domain, ctx.config.tld);
+      info(`removed dnsmasq.d/${ctx.domain}.conf`);
     },
   };
 }
@@ -77,13 +77,13 @@ export function caddy(): Plugin {
       const serviceHostnames: Record<string, string | false> = Object.fromEntries(
         Object.entries(ctx.config.services).map(([name, cfg]) => [name, cfg.hostname])
       );
-      await registerCaddy(ctx.city, ctx.config.tld, ctx.ports, serviceHostnames);
+      await registerCaddy(ctx.domain, ctx.config.tld, ctx.ports, serviceHostnames);
       const n = Object.keys(serviceHostnames).length;
-      info(`added ${n} route${n === 1 ? "" : "s"} for ${ctx.city}.${ctx.config.tld}`);
+      info(`added ${n} route${n === 1 ? "" : "s"} for ${ctx.domain}.${ctx.config.tld}`);
     },
     async onDeregister(ctx) {
-      await deregisterCaddy(ctx.city, ctx.config.tld);
-      info(`removed routes for ${ctx.city}.${ctx.config.tld}`);
+      await deregisterCaddy(ctx.domain, ctx.config.tld);
+      info(`removed routes for ${ctx.domain}.${ctx.config.tld}`);
     },
   };
 }
@@ -97,15 +97,16 @@ export function serviceEnv(): Plugin {
         const port = ctx.ports[name];
         if (port === undefined || !cfg.env) continue;
         const hostname = cfg.hostname === "*" || cfg.hostname === false ? "" : cfg.hostname;
-        const domain = `${ctx.city}.${ctx.config.tld}`;
-        const fqdn = hostname ? `${hostname}.${domain}` : domain;
+        const host = `${ctx.domain}.${ctx.config.tld}`;
+        const fqdn = hostname ? `${hostname}.${host}` : host;
         const vars: Record<string, string> = {
           port: String(port),
           worktree: ctx.worktreeName,
-          city: ctx.city,
+          domain: ctx.domain,
+          city: ctx.domain,
           tld: ctx.config.tld,
           hostname,
-          domain,
+          host,
           fqdn,
         };
         for (const [key, template] of Object.entries(cfg.env)) {
@@ -331,11 +332,11 @@ export function postgres(options: DatabaseConfig): Plugin {
   return {
     name: "wtenv:postgres",
     onRegister(ctx: PluginContext) {
-      const dbUrl = provisionDatabase(ctx.city, options);
+      const dbUrl = provisionDatabase(ctx.domain, options);
       ctx.envVars[options.envVar] = dbUrl;
     },
     onDeregister(ctx: PluginContext) {
-      teardownDatabase(ctx.city, options);
+      teardownDatabase(ctx.domain, options);
     },
   };
 }
@@ -364,13 +365,13 @@ export function redis(options: RedisConfig = {}): Plugin {
           `Add '${serviceName}: { hostname: false }' to your wtenv config's services.`
         );
       }
-      const url = provisionRedis(ctx.city, port, extraArgs);
+      const url = provisionRedis(ctx.domain, port, extraArgs);
       ctx.envVars[envVar] = url;
       if (portEnvVar) ctx.envVars[portEnvVar] = String(port);
     },
     onDeregister(ctx: PluginContext) {
       const port = ctx.ports[serviceName];
-      if (port !== undefined) teardownRedis(ctx.city, port);
+      if (port !== undefined) teardownRedis(ctx.domain, port);
     },
   };
 }
