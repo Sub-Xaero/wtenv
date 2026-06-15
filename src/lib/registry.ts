@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { BUNDLED_CITIES } from "./cities.js";
+import { BUNDLED_ANIMALS } from "./animals.js";
 
 const DB_DIR = join(homedir(), ".wtenv");
 const DB_PATH = join(DB_DIR, "registry.db");
@@ -10,7 +10,7 @@ const DB_PATH = join(DB_DIR, "registry.db");
 export interface Worktree {
   id: string;            // stable identifier (worktree git-dir absolute path)
   name: string;          // display name (worktree directory basename at register time)
-  city: string;          // checked-out city — used as DNS domain
+  domain: string;        // checked-out animal name — used as DNS domain identifier
   project_root: string;  // worktree cwd at register time
   created_at: number;
 }
@@ -22,7 +22,7 @@ export interface PortAssignment {
 }
 
 export interface AllocateOptions {
-  cityHint?: string;
+  domainHint?: string;
 }
 
 function openDb(): DatabaseSync {
@@ -34,24 +34,29 @@ function openDb(): DatabaseSync {
   return db;
 }
 
-// Drop legacy v1 schema (name-keyed, no city column) and recreate. v1 is
-// unsalvageable: conductor renames worktree directories so the name primary
-// key gets stale, which is the whole reason we're switching to a git-dir id.
 function migrate(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(worktrees)").all() as { name: string }[];
-  const hasNewSchema = cols.some((c) => c.name === "id") && cols.some((c) => c.name === "city");
-  if (cols.length > 0 && !hasNewSchema) {
+  const hasId = cols.some((c) => c.name === "id");
+  const hasCity = cols.some((c) => c.name === "city");
+  const hasDomain = cols.some((c) => c.name === "domain");
+
+  if (cols.length > 0 && !hasId) {
+    // Legacy v1 schema (name-keyed) — unsalvageable, drop and recreate.
     console.warn("wtenv: registry schema upgrade — clearing legacy worktrees. Re-run `wtenv register` in each worktree.");
     db.exec(`
       DROP TABLE IF EXISTS port_assignments;
       DROP TABLE IF EXISTS worktrees;
     `);
+  } else if (hasId && hasCity && !hasDomain) {
+    // v2 schema used city column — rename to domain in place.
+    db.exec("ALTER TABLE worktrees RENAME COLUMN city TO domain");
   }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS worktrees (
       id            TEXT PRIMARY KEY,
       name          TEXT NOT NULL,
-      city          TEXT NOT NULL UNIQUE,
+      domain        TEXT NOT NULL UNIQUE,
       project_root  TEXT NOT NULL,
       created_at    INTEGER NOT NULL
     );
@@ -66,22 +71,22 @@ function migrate(db: DatabaseSync): void {
   `);
 }
 
-function pickCity(db: DatabaseSync, hint?: string): string {
-  const takenRows = db.prepare("SELECT city FROM worktrees").all() as { city: string }[];
-  const taken = new Set(takenRows.map((r) => r.city));
+function pickDomain(db: DatabaseSync, hint?: string): string {
+  const takenRows = db.prepare("SELECT domain FROM worktrees").all() as { domain: string }[];
+  const taken = new Set(takenRows.map((r) => r.domain));
   if (hint && !taken.has(hint)) return hint;
-  const available = BUNDLED_CITIES.filter((c) => !taken.has(c));
+  const available = BUNDLED_ANIMALS.filter((a) => !taken.has(a));
   if (available.length === 0) {
     throw new Error(
-      `City pool exhausted (${BUNDLED_CITIES.length} cities, ${taken.size} taken). ` +
-        `Deregister an unused worktree or extend src/lib/cities.ts.`
+      `Animal pool exhausted (${BUNDLED_ANIMALS.length} animals, ${taken.size} taken). ` +
+        `Deregister an unused worktree or extend src/lib/animals.ts.`
     );
   }
   return available[Math.floor(Math.random() * available.length)];
 }
 
 export interface AllocationResult {
-  city: string;
+  domain: string;
   ports: Record<string, number>;
 }
 
@@ -102,7 +107,7 @@ export function allocateWorktree(
       throw new Error(`Worktree at '${id}' is already registered. Run 'wtenv deregister' first.`);
     }
 
-    const city = pickCity(db, options.cityHint);
+    const domain = pickDomain(db, options.domainHint);
 
     const usedPorts = new Set<number>(
       (db.prepare("SELECT port FROM port_assignments").all() as { port: number }[]).map(
@@ -123,14 +128,14 @@ export function allocateWorktree(
     }
 
     const insertWorktree = db.prepare(
-      "INSERT INTO worktrees (id, name, city, project_root, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO worktrees (id, name, domain, project_root, created_at) VALUES (?, ?, ?, ?, ?)"
     );
     const insertPort = db.prepare(
       "INSERT INTO port_assignments (worktree_id, service_name, port) VALUES (?, ?, ?)"
     );
     db.exec("BEGIN");
     try {
-      insertWorktree.run(id, name, city, projectRoot, Date.now());
+      insertWorktree.run(id, name, domain, projectRoot, Date.now());
       for (const [service, port] of Object.entries(assignments)) {
         insertPort.run(id, service, port);
       }
@@ -140,7 +145,7 @@ export function allocateWorktree(
       throw err;
     }
 
-    return { city, ports: assignments };
+    return { domain, ports: assignments };
   } finally {
     db.close();
   }
@@ -166,10 +171,10 @@ export function getWorktree(id: string): Worktree | null {
   }
 }
 
-export function getWorktreeByCity(city: string): Worktree | null {
+export function getWorktreeByDomain(domain: string): Worktree | null {
   const db = openDb();
   try {
-    const row = db.prepare("SELECT * FROM worktrees WHERE city = ?").get(city) as Worktree | undefined;
+    const row = db.prepare("SELECT * FROM worktrees WHERE domain = ?").get(domain) as Worktree | undefined;
     return row ?? null;
   } finally {
     db.close();

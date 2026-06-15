@@ -29,7 +29,7 @@ export async function ps(): Promise<void> {
 
   header(`wtenv ps  — ${worktrees.length} registered`);
 
-  const registeredCities = new Set(worktrees.map((wt) => wt.city));
+  const registeredDomains = new Set(worktrees.map((wt) => wt.domain));
 
   for (const wt of worktrees) {
     const configRoot = gitRoot(wt.project_root) ?? wt.project_root;
@@ -37,12 +37,12 @@ export async function ps(): Promise<void> {
     const tld = config?.tld ?? "test";
 
     const [caddyRoutes, dnsmasqConf] = await Promise.all([
-      hasCaddyRoutes(wt.city, tld),
-      Promise.resolve(hasDnsmasqConf(wt.city)),
+      hasCaddyRoutes(wt.domain, tld),
+      Promise.resolve(hasDnsmasqConf(wt.domain)),
     ]);
 
     console.log();
-    step(`${wt.name}  →  ${wt.city}.${tld}`);
+    step(`${wt.name}  →  ${wt.domain}.${tld}`);
 
     const caddyMark = caddyRoutes ? c.green("✓") : c.red("✗");
     const caddyDetail = caddyRoutes ? "routes loaded" : "no routes";
@@ -72,7 +72,7 @@ export async function ps(): Promise<void> {
   }
 
   const orphans = listDnsmasqConfNames().filter(
-    (name) => !registeredCities.has(name) && !name.startsWith("project-")
+    (name) => !registeredDomains.has(name) && !name.startsWith("project-")
   );
 
   if (orphans.length > 0) {

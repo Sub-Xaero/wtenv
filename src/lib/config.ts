@@ -53,7 +53,7 @@ export interface Plugin {
 export interface PluginContext {
   worktreeId: string;     // stable identifier (worktree git-dir absolute path)
   worktreeName: string;   // display name (cwd basename — may change if the directory is renamed)
-  city: string;           // checked-out city, used as DNS domain ({city}.{tld})
+  domain: string;         // checked-out animal name, used as DNS domain identifier ({domain}.{tld})
   cwd: string;
   configRoot: string;
   ports: Record<string, number>;
@@ -68,7 +68,7 @@ export interface WtenvConfig {
   services: Record<string, ServiceConfig>;
   // URL shortcuts resolved by `wtenv open` and `wtenv project open`.
   // Value is the subdomain prefix — e.g. { pro: "pro-company.dev" } makes
-  // `wtenv open pro` → https://pro-company.dev.<city>.<tld>.
+  // `wtenv open pro` → https://pro-company.dev.<domain>.<tld>.
   aliases?: Record<string, string>;
   plugins: Plugin[];
 }

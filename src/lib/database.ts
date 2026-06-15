@@ -11,10 +11,10 @@ function sanitizeName(name: string): string {
   return name.replace(/-/g, "_");
 }
 
-function databaseName(config: DatabaseConfig, city: string): string {
-  const sanitized = sanitizeName(city);
-  // {worktree} kept as a legacy alias so older configs keep working.
-  return config.namePattern.replace(/\{(city|worktree)\}/g, sanitized);
+function databaseName(config: DatabaseConfig, domain: string): string {
+  const sanitized = sanitizeName(domain);
+  // {city} and {worktree} kept as legacy aliases so older configs keep working.
+  return config.namePattern.replace(/\{(domain|city|worktree)\}/g, sanitized);
 }
 
 function databaseUrl(config: DatabaseConfig, dbName: string): string {
@@ -25,8 +25,8 @@ function pgEnv(config: DatabaseConfig): NodeJS.ProcessEnv {
   return { ...process.env, PGPASSWORD: config.password };
 }
 
-export function provisionDatabase(city: string, config: DatabaseConfig): string {
-  const dbName = databaseName(config, city);
+export function provisionDatabase(domain: string, config: DatabaseConfig): string {
+  const dbName = databaseName(config, domain);
   const env = pgEnv(config);
 
   const createResult = spawnSync(
@@ -71,8 +71,8 @@ export function provisionDatabase(city: string, config: DatabaseConfig): string 
   return databaseUrl(config, dbName);
 }
 
-export function teardownDatabase(city: string, config: DatabaseConfig): void {
-  const dbName = databaseName(config, city);
+export function teardownDatabase(domain: string, config: DatabaseConfig): void {
+  const dbName = databaseName(config, domain);
 
   const result = spawnSync(
     "dropdb",
@@ -88,6 +88,6 @@ export function teardownDatabase(city: string, config: DatabaseConfig): void {
   }
 }
 
-export function buildDatabaseUrl(city: string, config: DatabaseConfig): string {
-  return databaseUrl(config, databaseName(config, city));
+export function buildDatabaseUrl(domain: string, config: DatabaseConfig): string {
+  return databaseUrl(config, databaseName(config, domain));
 }
