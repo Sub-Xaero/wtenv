@@ -78,7 +78,7 @@ export async function doctor(): Promise<boolean> {
 
   const worktrees = listWorktrees();
   if (worktrees.length > 0) {
-    const probeHost = `probe.${worktrees[0].domain}.test`;
+    const probeHost = `probe.${worktrees[0].slug}.test`;
     try {
       const { address } = await dns.lookup(probeHost);
       check(
@@ -153,23 +153,23 @@ export async function doctor(): Promise<boolean> {
     info("no worktrees registered");
   } else {
     for (const wt of worktrees) {
-      const label = `${wt.name} (${wt.domain})`;
+      const label = `${wt.name} (${wt.slug})`;
 
       const gitDirExists = existsSync(wt.id);
       check(
         `${label} — git-dir exists`,
         gitDirExists ? "pass" : "fail",
         gitDirExists ? undefined : wt.id,
-        `run 'wtenv deregister --domain ${wt.domain}' or 'wtenv deregister --stale'`
+        `run 'wtenv deregister --slug ${wt.slug}' or 'wtenv deregister --stale'`
       );
 
-      const confFile = `/opt/homebrew/etc/dnsmasq.d/${wt.domain}.conf`;
+      const confFile = `/opt/homebrew/etc/dnsmasq.d/${wt.slug}.conf`;
       const confExists = existsSync(confFile);
       check(
         `${label} — dnsmasq conf present`,
         confExists ? "pass" : "fail",
         confExists ? undefined : confFile,
-        `re-register with 'wtenv reregister' or cleanup with 'wtenv deregister --domain ${wt.domain}'`
+        `re-register with 'wtenv reregister' or cleanup with 'wtenv deregister --slug ${wt.slug}'`
       );
 
       for (const [service, port] of Object.entries(wt.ports)) {

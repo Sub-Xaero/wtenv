@@ -1,7 +1,7 @@
 import { unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../lib/config.js";
-import { getWorktree, getWorktreePorts, getWorktreeByCity, listWorktrees } from "../lib/registry.js";
+import { getWorktree, getWorktreePorts, getWorktreeBySlug, listWorktrees } from "../lib/registry.js";
 import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
 import { header, step, info, success, error, warn } from "../lib/log.js";
@@ -11,15 +11,15 @@ function shortName(pluginName) {
 export async function deregister(name, opts = {}) {
     let cwd = opts.cwd ?? worktreeRoot() ?? process.cwd();
     let id = opts.id;
-    if (!id && opts.city) {
-        const byCity = getWorktreeByCity(opts.city);
-        if (!byCity) {
-            error(`No registered worktree found with city '${opts.city}'.`);
+    if (!id && opts.slug) {
+        const bySlug = getWorktreeBySlug(opts.slug);
+        if (!bySlug) {
+            error(`No registered worktree found with slug '${opts.slug}'.`);
             process.exit(1);
         }
-        id = byCity.id;
-        cwd = opts.cwd ?? byCity.project_root;
-        name = name ?? byCity.name;
+        id = bySlug.id;
+        cwd = opts.cwd ?? bySlug.project_root;
+        name = name ?? bySlug.name;
     }
     if (!id)
         id = worktreeId(cwd) ?? undefined;
@@ -37,14 +37,14 @@ export async function deregister(name, opts = {}) {
     const ctx = {
         worktreeId: id,
         worktreeName,
-        city: wt.city,
+        slug: wt.slug,
         cwd,
         configRoot,
         ports: getWorktreePorts(id),
         envVars: {},
         config,
     };
-    header(`Deregistering '${worktreeName}' (${wt.city}.${config.tld})`);
+    header(`Deregistering '${worktreeName}' (${wt.slug}.${config.tld})`);
     console.log();
     for (const plugin of [...config.plugins].reverse()) {
         if (!plugin.onDeregister)

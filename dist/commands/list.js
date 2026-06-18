@@ -29,7 +29,7 @@ export async function list() {
         const tld = config?.tld ?? "test";
         const age = formatAge(wt.created_at);
         console.log();
-        step(`${wt.name}  →  ${wt.city}.${tld}  ${c.dim(`(${age})`)}`);
+        step(`${wt.name}  →  ${wt.slug}.${tld}  ${c.dim(`(${age})`)}`);
         info(`${c.dim("project:")} ${wt.project_root}`);
         for (const [service, port] of Object.entries(wt.ports)) {
             const serviceCfg = config?.services[service];
@@ -37,8 +37,8 @@ export async function list() {
                 const hostname = serviceCfg.hostname === false
                     ? null
                     : serviceCfg.hostname === "*"
-                        ? `*.${wt.city}.${tld}`
-                        : `${serviceCfg.hostname}.${wt.city}.${tld}`;
+                        ? `*.${wt.slug}.${tld}`
+                        : `${serviceCfg.hostname}.${wt.slug}.${tld}`;
                 info(`${service.padEnd(10)} :${port}${hostname ? `   https://${hostname}` : ""}`);
             }
             else {

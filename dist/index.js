@@ -77,7 +77,7 @@ program
     .command("deregister [name]")
     .description("Remove DNS config, Caddy routes, and release port allocations")
     .option("--env-file <filename>", "Env file name to remove", ".env.worktree")
-    .option("--city <city>", "Target a specific registered worktree by city name")
+    .option("--slug <slug>", "Target a specific registered worktree by slug")
     .option("--stale", "Remove all orphaned registry entries whose worktree directory no longer exists")
     .action(async (name, opts) => {
     try {
@@ -85,7 +85,7 @@ program
             await deregisterStale({ envFile: opts.envFile });
         }
         else {
-            await deregister(name, { envFile: opts.envFile, city: opts.city });
+            await deregister(name, { envFile: opts.envFile, slug: opts.slug });
         }
     }
     catch (err) {

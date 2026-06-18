@@ -24,17 +24,17 @@ export async function ps() {
         return configCache.get(configRoot) ?? null;
     };
     header(`wtenv ps  — ${worktrees.length} registered`);
-    const registeredCities = new Set(worktrees.map((wt) => wt.city));
+    const registeredSlugs = new Set(worktrees.map((wt) => wt.slug));
     for (const wt of worktrees) {
         const configRoot = gitRoot(wt.project_root) ?? wt.project_root;
         const config = await loadCachedConfig(configRoot);
         const tld = config?.tld ?? "test";
         const [caddyRoutes, dnsmasqConf] = await Promise.all([
-            hasCaddyRoutes(wt.city, tld),
-            Promise.resolve(hasDnsmasqConf(wt.city)),
+            hasCaddyRoutes(wt.slug, tld),
+            Promise.resolve(hasDnsmasqConf(wt.slug)),
         ]);
         console.log();
-        step(`${wt.name}  →  ${wt.city}.${tld}`);
+        step(`${wt.name}  →  ${wt.slug}.${tld}`);
         const caddyMark = caddyRoutes ? c.green("✓") : c.red("✗");
         const caddyDetail = caddyRoutes ? "routes loaded" : "no routes";
         console.log(`    ${caddyMark} caddy     ${caddyDetail}`);
@@ -59,7 +59,7 @@ export async function ps() {
             }
         }
     }
-    const orphans = listDnsmasqConfNames().filter((name) => !registeredCities.has(name) && !name.startsWith("project-"));
+    const orphans = listDnsmasqConfNames().filter((name) => !registeredSlugs.has(name) && !name.startsWith("project-"));
     if (orphans.length > 0) {
         console.log();
         step("Orphaned configs (not in registry)");

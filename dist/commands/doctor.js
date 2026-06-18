@@ -53,7 +53,7 @@ export async function doctor() {
     check("Caddy running (admin :2019)", caddyUp ? "pass" : "fail", undefined, "run 'wtenv setup'");
     const worktrees = listWorktrees();
     if (worktrees.length > 0) {
-        const probeHost = `probe.${worktrees[0].city}.test`;
+        const probeHost = `probe.${worktrees[0].slug}.test`;
         try {
             const { address } = await dns.lookup(probeHost);
             check("DNS resolves *.test → 127.0.0.1", address === "127.0.0.1" ? "pass" : "fail", address, address !== "127.0.0.1" ? "run 'wtenv setup'" : undefined);
@@ -107,12 +107,12 @@ export async function doctor() {
     }
     else {
         for (const wt of worktrees) {
-            const label = `${wt.name} (${wt.city})`;
+            const label = `${wt.name} (${wt.slug})`;
             const gitDirExists = existsSync(wt.id);
-            check(`${label} — git-dir exists`, gitDirExists ? "pass" : "fail", gitDirExists ? undefined : wt.id, `run 'wtenv deregister --city ${wt.city}' or 'wtenv deregister --stale'`);
-            const confFile = `/opt/homebrew/etc/dnsmasq.d/${wt.city}.conf`;
+            check(`${label} — git-dir exists`, gitDirExists ? "pass" : "fail", gitDirExists ? undefined : wt.id, `run 'wtenv deregister --slug ${wt.slug}' or 'wtenv deregister --stale'`);
+            const confFile = `/opt/homebrew/etc/dnsmasq.d/${wt.slug}.conf`;
             const confExists = existsSync(confFile);
-            check(`${label} — dnsmasq conf present`, confExists ? "pass" : "fail", confExists ? undefined : confFile, `re-register with 'wtenv reregister' or cleanup with 'wtenv deregister --city ${wt.city}'`);
+            check(`${label} — dnsmasq conf present`, confExists ? "pass" : "fail", confExists ? undefined : confFile, `re-register with 'wtenv reregister' or cleanup with 'wtenv deregister --slug ${wt.slug}'`);
             for (const [service, port] of Object.entries(wt.ports)) {
                 const pid = listeningPid(port);
                 if (pid === null)

@@ -42,7 +42,7 @@ function buildConfig(projectName, withPostgres) {
         ? `
   // Uncomment and configure if you use PostgreSQL:
   // postgres({
-  //   namePattern: "${projectName ?? "myapp"}_{city}",
+  //   namePattern: "${projectName ?? "myapp"}_{slug}",
   //   host: "localhost",
   //   port: 5432,
   //   username: "postgres",
@@ -57,8 +57,9 @@ export default defineConfig({
 ${nameComment}  tld: "test",
 
   // Map service names to hostnames and env vars.
-  // hostname "*" = root domain (worktree.test); use a string for a subdomain (api.worktree.test).
-  // Env var values support: {port} {worktree} {city} {tld} {hostname} {domain} {fqdn}
+  // hostname "*" = root domain (slug.test); use a string for a subdomain (api.slug.test).
+  // Env var values support: {port} {worktree} {slug} {tld} {hostname} {domain} {fqdn}
+  //   {slug}=animal label  {domain}=slug.tld  {fqdn}=hostname.slug.tld
   services: {
     web: {
       hostname: "*",

@@ -9,9 +9,10 @@ import { provisionDatabase, teardownDatabase } from "./database.js";
 import { provisionRedis, teardownRedis } from "./redis.js";
 import { allocateWorktree, releaseWorktree } from "./registry.js";
 import { info, cmd, warn } from "./log.js";
-// Allocates the worktree's registry row, including a checked-out city from the
-// bundled pool and per-service ports. Also seeds `ctx.city` and exports
-// `WTENV_CITY` so downstream plugins (and the consuming app) can read it.
+// Allocates the worktree's registry row, including a checked-out animal name
+// (the slug) from the bundled pool and per-service ports. Also seeds `ctx.slug`
+// and exports `WTENV_SLUG` (the bare label) plus `WTENV_DOMAIN` (slug.tld) so
+// downstream plugins (and the consuming app) can read them.
 export function ports(options) {
     const portRange = options?.portRange ?? [3100, 4099];
     return {
@@ -19,11 +20,12 @@ export function ports(options) {
         portRange,
         onRegister(ctx) {
             const serviceNames = Object.keys(ctx.config.services);
-            const { city, ports: allocated } = allocateWorktree(ctx.worktreeId, ctx.worktreeName, ctx.cwd, serviceNames, portRange);
-            ctx.city = city;
+            const { slug, ports: allocated } = allocateWorktree(ctx.worktreeId, ctx.worktreeName, ctx.cwd, serviceNames, portRange);
+            ctx.slug = slug;
             Object.assign(ctx.ports, allocated);
-            ctx.envVars.WTENV_CITY = city;
-            info(`city: ${city}`);
+            ctx.envVars.WTENV_SLUG = slug;
+            ctx.envVars.WTENV_DOMAIN = `${slug}.${ctx.config.tld}`;
+            info(`slug: ${slug}`);
             const portList = Object.entries(allocated)
                 .map(([s, p]) => `${s}=${p}`)
                 .join("  ");
@@ -31,7 +33,7 @@ export function ports(options) {
         },
         onDeregister(ctx) {
             releaseWorktree(ctx.worktreeId);
-            info(`released city '${ctx.city}' and ports`);
+            info(`released slug '${ctx.slug}' and ports`);
         },
     };
 }
@@ -39,20 +41,20 @@ export function dns() {
     return {
         name: "wtenv:dns",
         onRegister(ctx) {
-            registerDnsmasq(ctx.city, ctx.config.tld);
-            info(`wrote dnsmasq.d/${ctx.city}.conf`);
+            registerDnsmasq(ctx.slug, ctx.config.tld);
+            info(`wrote dnsmasq.d/${ctx.slug}.conf`);
             // For tld: 'local', also publish the bare 2-label name via mDNS since /etc/resolver
             // files don't intercept bare .local queries before mDNSResponder.
-            const bareLocals = bareLocalHostnames(`${ctx.city}.${ctx.config.tld}`, []);
+            const bareLocals = bareLocalHostnames(`${ctx.slug}.${ctx.config.tld}`, []);
             if (bareLocals.length > 0) {
-                registerMdnsHosts(ctx.city, bareLocals);
+                registerMdnsHosts(ctx.slug, bareLocals);
                 info(`published mDNS for ${bareLocals.join(", ")}`);
             }
         },
         onDeregister(ctx) {
-            deregisterMdnsHosts(ctx.city);
-            deregisterDnsmasq(ctx.city, ctx.config.tld);
-            info(`removed dnsmasq.d/${ctx.city}.conf`);
+            deregisterMdnsHosts(ctx.slug);
+            deregisterDnsmasq(ctx.slug, ctx.config.tld);
+            info(`removed dnsmasq.d/${ctx.slug}.conf`);
         },
     };
 }
@@ -61,13 +63,13 @@ export function caddy() {
         name: "wtenv:caddy",
         async onRegister(ctx) {
             const serviceHostnames = Object.fromEntries(Object.entries(ctx.config.services).map(([name, cfg]) => [name, cfg.hostname]));
-            await registerCaddy(ctx.city, ctx.config.tld, ctx.ports, serviceHostnames);
+            await registerCaddy(ctx.slug, ctx.config.tld, ctx.ports, serviceHostnames);
             const n = Object.keys(serviceHostnames).length;
-            info(`added ${n} route${n === 1 ? "" : "s"} for ${ctx.city}.${ctx.config.tld}`);
+            info(`added ${n} route${n === 1 ? "" : "s"} for ${ctx.slug}.${ctx.config.tld}`);
         },
         async onDeregister(ctx) {
-            await deregisterCaddy(ctx.city, ctx.config.tld);
-            info(`removed routes for ${ctx.city}.${ctx.config.tld}`);
+            await deregisterCaddy(ctx.slug, ctx.config.tld);
+            info(`removed routes for ${ctx.slug}.${ctx.config.tld}`);
         },
     };
 }
@@ -81,12 +83,12 @@ export function serviceEnv() {
                 if (port === undefined || !cfg.env)
                     continue;
                 const hostname = cfg.hostname === "*" || cfg.hostname === false ? "" : cfg.hostname;
-                const domain = `${ctx.city}.${ctx.config.tld}`;
+                const domain = `${ctx.slug}.${ctx.config.tld}`;
                 const fqdn = hostname ? `${hostname}.${domain}` : domain;
                 const vars = {
                     port: String(port),
                     worktree: ctx.worktreeName,
-                    city: ctx.city,
+                    slug: ctx.slug,
                     tld: ctx.config.tld,
                     hostname,
                     domain,
@@ -273,11 +275,11 @@ export function postgres(options) {
     return {
         name: "wtenv:postgres",
         onRegister(ctx) {
-            const dbUrl = provisionDatabase(ctx.city, options);
+            const dbUrl = provisionDatabase(ctx.slug, options);
             ctx.envVars[options.envVar] = dbUrl;
         },
         onDeregister(ctx) {
-            teardownDatabase(ctx.city, options);
+            teardownDatabase(ctx.slug, options);
         },
     };
 }
@@ -291,7 +293,7 @@ export function redis(options = {}) {
                 throw new Error(`redis: no port allocated for service '${serviceName}'. ` +
                     `Add '${serviceName}: { hostname: false }' to your wtenv config's services.`);
             }
-            const url = provisionRedis(ctx.city, port, extraArgs);
+            const url = provisionRedis(ctx.slug, port, extraArgs);
             ctx.envVars[envVar] = url;
             if (portEnvVar)
                 ctx.envVars[portEnvVar] = String(port);
@@ -299,7 +301,7 @@ export function redis(options = {}) {
         onDeregister(ctx) {
             const port = ctx.ports[serviceName];
             if (port !== undefined)
-                teardownRedis(ctx.city, port);
+                teardownRedis(ctx.slug, port);
         },
     };
 }

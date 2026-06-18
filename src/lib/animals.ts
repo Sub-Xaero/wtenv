@@ -1,4 +1,4 @@
-// Bundled pool of animal names used as worktree domain identifiers. Names are
+// Bundled pool of animal names used as worktree slugs (DNS labels). Names are
 // lowercase ASCII so they're valid DNS labels without IDNA encoding.
 export const BUNDLED_ANIMALS: readonly string[] = [
   "aardvark",

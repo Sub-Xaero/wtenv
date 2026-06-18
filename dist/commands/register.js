@@ -30,8 +30,8 @@ export async function register(name, opts = {}) {
             const hostname = cfg.hostname === false
                 ? null
                 : cfg.hostname === "*"
-                    ? `*.<city>.${config.tld}`
-                    : `${cfg.hostname}.<city>.${config.tld}`;
+                    ? `*.<slug>.${config.tld}`
+                    : `${cfg.hostname}.<slug>.${config.tld}`;
             info(`${service}: port ${nextPort}${hostname ? `  →  https://${hostname}` : ""}`);
             nextPort++;
         }
@@ -41,11 +41,11 @@ export async function register(name, opts = {}) {
         return;
     }
     const envVars = {};
-    // city is populated by the ports plugin during onRegister
+    // slug is populated by the ports plugin during onRegister
     const ctx = {
         worktreeId: id,
         worktreeName,
-        city: "",
+        slug: "",
         cwd,
         configRoot,
         ports: {},
@@ -81,14 +81,14 @@ export async function register(name, opts = {}) {
     writeFileSync(envFilePath, Object.entries(envVars)
         .map(([k, v]) => `${k}=${v}`)
         .join("\n") + "\n");
-    success(`Registered '${worktreeName}' as ${ctx.city}.${config.tld}`);
+    success(`Registered '${worktreeName}' as ${ctx.slug}.${config.tld}`);
     for (const [service, port] of Object.entries(ctx.ports)) {
         const cfg = config.services[service];
         const hostname = cfg.hostname === false
             ? null
             : cfg.hostname === "*"
-                ? `*.${ctx.city}.${config.tld}`
-                : `${cfg.hostname}.${ctx.city}.${config.tld}`;
+                ? `*.${ctx.slug}.${config.tld}`
+                : `${cfg.hostname}.${ctx.slug}.${config.tld}`;
         console.log(`    ${service.padEnd(10)} :${port}${hostname ? `   https://${hostname}` : ""}`);
     }
     const envRel = relative(cwd, envFilePath) || envFilePath;

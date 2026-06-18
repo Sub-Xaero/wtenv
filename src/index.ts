@@ -80,14 +80,14 @@ program
   .command("deregister [name]")
   .description("Remove DNS config, Caddy routes, and release port allocations")
   .option("--env-file <filename>", "Env file name to remove", ".env.worktree")
-  .option("--domain <domain>", "Target a specific registered worktree by domain name")
+  .option("--slug <slug>", "Target a specific registered worktree by slug")
   .option("--stale", "Remove all orphaned registry entries whose worktree directory no longer exists")
-  .action(async (name: string | undefined, opts: { envFile: string; domain?: string; stale?: boolean }) => {
+  .action(async (name: string | undefined, opts: { envFile: string; slug?: string; stale?: boolean }) => {
     try {
       if (opts.stale) {
         await deregisterStale({ envFile: opts.envFile });
       } else {
-        await deregister(name, { envFile: opts.envFile, domain: opts.domain });
+        await deregister(name, { envFile: opts.envFile, slug: opts.slug });
       }
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);

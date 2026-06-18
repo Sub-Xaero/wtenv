@@ -98,7 +98,7 @@ async function patchRoutes(newRoutes, filterFn) {
     const filtered = currentRoutes.filter(filterFn);
     await writeConfig(listen, [...filtered, ...newRoutes]);
 }
-function buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames) {
+function buildWorktreeRoutes(slug, tld, ports, serviceHostnames) {
     const routes = [];
     const wildcardPort = Object.entries(serviceHostnames)
         .filter(([, h]) => h === "*")
@@ -110,17 +110,17 @@ function buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames) {
         if (port === undefined)
             continue;
         routes.push({
-            match: [{ host: [`${hostname}.${worktreeName}.${tld}`] }],
+            match: [{ host: [`${hostname}.${slug}.${tld}`] }],
             handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `localhost:${port}` }] }],
         });
     }
     if (wildcardPort !== undefined) {
         routes.push({
             match: [{ host: [
-                        `${worktreeName}.${tld}`,
-                        `*.${worktreeName}.${tld}`,
-                        `*.*.${worktreeName}.${tld}`,
-                        `*.*.*.${worktreeName}.${tld}`,
+                        `${slug}.${tld}`,
+                        `*.${slug}.${tld}`,
+                        `*.*.${slug}.${tld}`,
+                        `*.*.*.${slug}.${tld}`,
                     ] }],
             handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `localhost:${wildcardPort}` }] }],
         });
@@ -146,15 +146,15 @@ function buildProjectRoutes(domains) {
         };
     });
 }
-function isWorktreeHost(h, worktreeName, tld) {
-    return h === `${worktreeName}.${tld}` || h.includes(`.${worktreeName}.`);
+function isWorktreeHost(h, slug, tld) {
+    return h === `${slug}.${tld}` || h.includes(`.${slug}.`);
 }
-export async function registerCaddy(worktreeName, tld, ports, serviceHostnames) {
-    const newRoutes = buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames);
-    await patchRoutes(newRoutes, (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, worktreeName, tld))));
+export async function registerCaddy(slug, tld, ports, serviceHostnames) {
+    const newRoutes = buildWorktreeRoutes(slug, tld, ports, serviceHostnames);
+    await patchRoutes(newRoutes, (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, slug, tld))));
 }
-export async function deregisterCaddy(worktreeName, tld) {
-    await patchRoutes([], (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, worktreeName, tld))));
+export async function deregisterCaddy(slug, tld) {
+    await patchRoutes([], (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, slug, tld))));
 }
 export async function registerProjectCaddy(projectName, domains) {
     const newRoutes = buildProjectRoutes(domains);
@@ -191,12 +191,12 @@ export function detectCaddyConflict() {
         `(usually Homebrew's \`brew services\` caddy) competes for :443 and the :2019 admin, ` +
         `so these route changes may not take effect. Run \`wtenv setup\` to remove the conflict.`);
 }
-export async function hasCaddyRoutes(city, tld) {
+export async function hasCaddyRoutes(slug, tld) {
     const config = await getConfig();
     if (!config)
         return false;
     const routes = config.apps?.http?.servers?.wtenv?.routes ?? [];
-    return routes.some((r) => r.match?.some((m) => m.host?.some((h) => isWorktreeHost(h, city, tld))));
+    return routes.some((r) => r.match?.some((m) => m.host?.some((h) => isWorktreeHost(h, slug, tld))));
 }
 export async function isCaddyRunning() {
     try {

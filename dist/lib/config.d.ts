@@ -28,7 +28,7 @@ export interface Plugin {
 export interface PluginContext {
     worktreeId: string;
     worktreeName: string;
-    city: string;
+    slug: string;
     cwd: string;
     configRoot: string;
     ports: Record<string, number>;

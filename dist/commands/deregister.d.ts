@@ -3,7 +3,7 @@ interface DeregisterOptions {
     configRoot?: string;
     envFile?: string;
     id?: string;
-    city?: string;
+    slug?: string;
 }
 export declare function deregister(name: string | undefined, opts?: DeregisterOptions): Promise<void>;
 export declare function deregisterStale(opts?: {

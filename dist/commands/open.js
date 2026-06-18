@@ -44,7 +44,7 @@ export async function open(arg, opts = {}) {
             subdomain = arg;
         }
     }
-    const host = subdomain ? `${subdomain}.${wt.city}.${config.tld}` : `${wt.city}.${config.tld}`;
+    const host = subdomain ? `${subdomain}.${wt.slug}.${config.tld}` : `${wt.slug}.${config.tld}`;
     launch(`https://${host}`, opts.print ?? false);
 }
 export async function projectOpen(arg, opts = {}) {

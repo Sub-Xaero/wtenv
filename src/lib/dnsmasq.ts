@@ -36,14 +36,14 @@ function removeResolverFile(domain: string): boolean {
   return sudoExec(["/bin/rm", "-f", `/etc/resolver/${domain}`]);
 }
 
-export function registerDnsmasq(worktreeName: string, tld: string): void {
+export function registerDnsmasq(slug: string, tld: string): void {
   mkdirSync(DNSMASQ_CONF_DIR, { recursive: true });
   // local= prevents dnsmasq from forwarding to upstream — without it, dnsmasq
   // intermittently forwards queries instead of applying the address rule, causing
   // 30-second timeouts when upstream can't resolve .test domains.
-  const domain = `${worktreeName}.${tld}`;
+  const domain = `${slug}.${tld}`;
   const content = `local=/.${domain}/\naddress=/.${domain}/127.0.0.1\n`;
-  writeFileSync(confPath(worktreeName), content);
+  writeFileSync(confPath(slug), content);
   reloadDnsmasq();
 
   // If the TLD has a global resolver file (e.g. /etc/resolver/test written by setup),
@@ -65,8 +65,8 @@ export function registerDnsmasq(worktreeName: string, tld: string): void {
   }
 }
 
-export function deregisterDnsmasq(worktreeName: string, tld?: string): void {
-  const path = confPath(worktreeName);
+export function deregisterDnsmasq(slug: string, tld?: string): void {
+  const path = confPath(slug);
   if (existsSync(path)) {
     unlinkSync(path);
     reloadDnsmasq();
@@ -74,7 +74,7 @@ export function deregisterDnsmasq(worktreeName: string, tld?: string): void {
 
   // Remove per-worktree resolver file if we created one
   if (tld && !existsSync(`/etc/resolver/${tld}`)) {
-    const domain = `${worktreeName}.${tld}`;
+    const domain = `${slug}.${tld}`;
     const resolverPath = `/etc/resolver/${domain}`;
     if (existsSync(resolverPath)) {
       if (!requireSudoOrSkip(`/etc/resolver/${domain} cleanup`)) return;
@@ -130,8 +130,8 @@ export function deregisterProjectDnsmasq(projectName: string, baseDomain: string
   }
 }
 
-export function hasDnsmasqConf(worktreeName: string): boolean {
-  return existsSync(confPath(worktreeName));
+export function hasDnsmasqConf(slug: string): boolean {
+  return existsSync(confPath(slug));
 }
 
 export function listDnsmasqConfNames(): string[] {

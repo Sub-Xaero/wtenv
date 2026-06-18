@@ -55,8 +55,8 @@ export async function kill(opts = {}) {
         .map(([s, p]) => `${s}=${p}`)
         .join("  ");
     const headerText = opts.dryRun
-        ? `Dry run: would kill processes on '${wt.name}' (${wt.city}.${config.tld})`
-        : `Killing processes on '${wt.name}' (${wt.city}.${config.tld})`;
+        ? `Dry run: would kill processes on '${wt.name}' (${wt.slug}.${config.tld})`
+        : `Killing processes on '${wt.name}' (${wt.slug}.${config.tld})`;
     header(headerText);
     console.log(`    ${c.dim("ports:")} ${portSummary}`);
     console.log();

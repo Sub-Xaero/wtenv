@@ -4,22 +4,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { info, warn } from "./log.js";
 
-function redisDir(domain: string): string {
-  return join(tmpdir(), `wtenv-redis-${domain}`);
+function redisDir(slug: string): string {
+  return join(tmpdir(), `wtenv-redis-${slug}`);
 }
 
-function redisLogFile(domain: string): string {
-  return join(tmpdir(), `wtenv-redis-${domain}.log`);
+function redisLogFile(slug: string): string {
+  return join(tmpdir(), `wtenv-redis-${slug}.log`);
 }
 
-export function provisionRedis(domain: string, port: number, extraArgs: string[] = []): string {
-  const dir = redisDir(domain);
+export function provisionRedis(slug: string, port: number, extraArgs: string[] = []): string {
+  const dir = redisDir(slug);
   mkdirSync(dir, { recursive: true });
 
   const args = [
     "--port", String(port),
     "--daemonize", "yes",
-    "--logfile", redisLogFile(domain),
+    "--logfile", redisLogFile(slug),
     "--dir", dir,
     ...extraArgs,
   ];
@@ -41,7 +41,7 @@ export function provisionRedis(domain: string, port: number, extraArgs: string[]
   return `redis://127.0.0.1:${port}`;
 }
 
-export function teardownRedis(domain: string, port: number): void {
+export function teardownRedis(slug: string, port: number): void {
   const result = spawnSync("redis-cli", ["-p", String(port), "shutdown"], { stdio: "pipe" });
 
   if (result.status !== 0) {
@@ -52,7 +52,7 @@ export function teardownRedis(domain: string, port: number): void {
   }
 
   try {
-    rmSync(redisDir(domain), { recursive: true, force: true });
+    rmSync(redisDir(slug), { recursive: true, force: true });
   } catch (err) {
     warn(`could not remove redis data dir: ${String(err)}`);
   }

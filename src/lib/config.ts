@@ -53,7 +53,7 @@ export interface Plugin {
 export interface PluginContext {
   worktreeId: string;     // stable identifier (worktree git-dir absolute path)
   worktreeName: string;   // display name (cwd basename — may change if the directory is renamed)
-  domain: string;         // checked-out animal name, used as DNS domain identifier ({domain}.{tld})
+  slug: string;           // checked-out animal name, the DNS label — forms the domain {slug}.{tld}
   cwd: string;
   configRoot: string;
   ports: Record<string, number>;

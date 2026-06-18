@@ -59,7 +59,7 @@ export async function open(arg: string | undefined, opts: OpenOptions = {}): Pro
     }
   }
 
-  const host = subdomain ? `${subdomain}.${wt.domain}.${config.tld}` : `${wt.domain}.${config.tld}`;
+  const host = subdomain ? `${subdomain}.${wt.slug}.${config.tld}` : `${wt.slug}.${config.tld}`;
   launch(`https://${host}`, opts.print ?? false);
 }
 

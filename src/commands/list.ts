@@ -35,7 +35,7 @@ export async function list(): Promise<void> {
 
     const age = formatAge(wt.created_at);
     console.log();
-    step(`${wt.name}  →  ${wt.domain}.${tld}  ${c.dim(`(${age})`)}`);
+    step(`${wt.name}  →  ${wt.slug}.${tld}  ${c.dim(`(${age})`)}`);
     info(`${c.dim("project:")} ${wt.project_root}`);
 
     for (const [service, port] of Object.entries(wt.ports)) {
@@ -45,8 +45,8 @@ export async function list(): Promise<void> {
           serviceCfg.hostname === false
             ? null
             : serviceCfg.hostname === "*"
-            ? `*.${wt.domain}.${tld}`
-            : `${serviceCfg.hostname}.${wt.domain}.${tld}`;
+            ? `*.${wt.slug}.${tld}`
+            : `${serviceCfg.hostname}.${wt.slug}.${tld}`;
         info(`${service.padEnd(10)} :${port}${hostname ? `   https://${hostname}` : ""}`);
       } else {
         info(`${service.padEnd(10)} :${port}`);

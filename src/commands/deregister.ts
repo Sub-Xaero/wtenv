@@ -2,7 +2,7 @@ import { unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../lib/config.js";
 import type { PluginContext } from "../lib/config.js";
-import { getWorktree, getWorktreePorts, getWorktreeByDomain, listWorktrees } from "../lib/registry.js";
+import { getWorktree, getWorktreePorts, getWorktreeBySlug, listWorktrees } from "../lib/registry.js";
 import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
 import { header, step, info, success, error, warn } from "../lib/log.js";
@@ -12,7 +12,7 @@ interface DeregisterOptions {
   configRoot?: string;
   envFile?: string;
   id?: string;     // direct id (bypasses git-dir lookup — used by `wtenv reset`)
-  domain?: string; // look up by domain name instead of cwd git-dir
+  slug?: string;   // look up by slug instead of cwd git-dir
 }
 
 function shortName(pluginName: string): string {
@@ -26,15 +26,15 @@ export async function deregister(
   let cwd = opts.cwd ?? worktreeRoot() ?? process.cwd();
   let id = opts.id;
 
-  if (!id && opts.domain) {
-    const byDomain = getWorktreeByDomain(opts.domain);
-    if (!byDomain) {
-      error(`No registered worktree found with domain '${opts.domain}'.`);
+  if (!id && opts.slug) {
+    const bySlug = getWorktreeBySlug(opts.slug);
+    if (!bySlug) {
+      error(`No registered worktree found with slug '${opts.slug}'.`);
       process.exit(1);
     }
-    id = byDomain.id;
-    cwd = opts.cwd ?? byDomain.project_root;
-    name = name ?? byDomain.name;
+    id = bySlug.id;
+    cwd = opts.cwd ?? bySlug.project_root;
+    name = name ?? bySlug.name;
   }
 
   if (!id) id = worktreeId(cwd) ?? undefined;
@@ -56,7 +56,7 @@ export async function deregister(
   const ctx: PluginContext = {
     worktreeId: id,
     worktreeName,
-    domain: wt.domain,
+    slug: wt.slug,
     cwd,
     configRoot,
     ports: getWorktreePorts(id),
@@ -64,7 +64,7 @@ export async function deregister(
     config,
   };
 
-  header(`Deregistering '${worktreeName}' (${wt.domain}.${config.tld})`);
+  header(`Deregistering '${worktreeName}' (${wt.slug}.${config.tld})`);
   console.log();
 
   for (const plugin of [...config.plugins].reverse()) {

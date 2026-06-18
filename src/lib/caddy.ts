@@ -153,7 +153,7 @@ async function patchRoutes(
 }
 
 function buildWorktreeRoutes(
-  worktreeName: string,
+  slug: string,
   tld: string,
   ports: Record<string, number>,
   serviceHostnames: Record<string, string | false>
@@ -168,7 +168,7 @@ function buildWorktreeRoutes(
     const port = ports[service];
     if (port === undefined) continue;
     routes.push({
-      match: [{ host: [`${hostname}.${worktreeName}.${tld}`] }],
+      match: [{ host: [`${hostname}.${slug}.${tld}`] }],
       handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `localhost:${port}` }] }],
     });
   }
@@ -176,10 +176,10 @@ function buildWorktreeRoutes(
   if (wildcardPort !== undefined) {
     routes.push({
       match: [{ host: [
-        `${worktreeName}.${tld}`,
-        `*.${worktreeName}.${tld}`,
-        `*.*.${worktreeName}.${tld}`,
-        `*.*.*.${worktreeName}.${tld}`,
+        `${slug}.${tld}`,
+        `*.${slug}.${tld}`,
+        `*.*.${slug}.${tld}`,
+        `*.*.*.${slug}.${tld}`,
       ]}],
       handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `localhost:${wildcardPort}` }] }],
     });
@@ -209,27 +209,27 @@ function buildProjectRoutes(domains: ProjectDomain[]): CaddyRoute[] {
   });
 }
 
-function isWorktreeHost(h: string, worktreeName: string, tld: string): boolean {
-  return h === `${worktreeName}.${tld}` || h.includes(`.${worktreeName}.`);
+function isWorktreeHost(h: string, slug: string, tld: string): boolean {
+  return h === `${slug}.${tld}` || h.includes(`.${slug}.`);
 }
 
 export async function registerCaddy(
-  worktreeName: string,
+  slug: string,
   tld: string,
   ports: Record<string, number>,
   serviceHostnames: Record<string, string | false>
 ): Promise<void> {
-  const newRoutes = buildWorktreeRoutes(worktreeName, tld, ports, serviceHostnames);
+  const newRoutes = buildWorktreeRoutes(slug, tld, ports, serviceHostnames);
   await patchRoutes(
     newRoutes,
-    (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, worktreeName, tld)))
+    (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, slug, tld)))
   );
 }
 
-export async function deregisterCaddy(worktreeName: string, tld: string): Promise<void> {
+export async function deregisterCaddy(slug: string, tld: string): Promise<void> {
   await patchRoutes(
     [],
-    (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, worktreeName, tld)))
+    (r) => !r.match.some((m) => m.host?.some((h) => isWorktreeHost(h, slug, tld)))
   );
 }
 
@@ -288,12 +288,12 @@ export function detectCaddyConflict(): string | null {
   );
 }
 
-export async function hasCaddyRoutes(city: string, tld: string): Promise<boolean> {
+export async function hasCaddyRoutes(slug: string, tld: string): Promise<boolean> {
   const config = await getConfig();
   if (!config) return false;
   const routes = config.apps?.http?.servers?.wtenv?.routes ?? [];
   return routes.some((r) =>
-    r.match?.some((m) => m.host?.some((h) => isWorktreeHost(h, city, tld)))
+    r.match?.some((m) => m.host?.some((h) => isWorktreeHost(h, slug, tld)))
   );
 }
 

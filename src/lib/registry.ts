@@ -10,7 +10,7 @@ const DB_PATH = join(DB_DIR, "registry.db");
 export interface Worktree {
   id: string;            // stable identifier (worktree git-dir absolute path)
   name: string;          // display name (worktree directory basename at register time)
-  domain: string;        // checked-out animal name — used as DNS domain identifier
+  slug: string;          // checked-out animal name — the DNS label, forms slug.tld
   project_root: string;  // worktree cwd at register time
   created_at: number;
 }
@@ -22,7 +22,7 @@ export interface PortAssignment {
 }
 
 export interface AllocateOptions {
-  domainHint?: string;
+  slugHint?: string;
 }
 
 function openDb(): DatabaseSync {
@@ -37,8 +37,10 @@ function openDb(): DatabaseSync {
 function migrate(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(worktrees)").all() as { name: string }[];
   const hasId = cols.some((c) => c.name === "id");
-  const hasCity = cols.some((c) => c.name === "city");
-  const hasDomain = cols.some((c) => c.name === "domain");
+  const hasSlug = cols.some((c) => c.name === "slug");
+  // Earlier schemas named this column "city" then "domain"; both held the same
+  // bare animal identifier now called "slug".
+  const legacyIdentifier = cols.find((c) => c.name === "city" || c.name === "domain");
 
   if (cols.length > 0 && !hasId) {
     // Legacy v1 schema (name-keyed) — unsalvageable, drop and recreate.
@@ -47,16 +49,16 @@ function migrate(db: DatabaseSync): void {
       DROP TABLE IF EXISTS port_assignments;
       DROP TABLE IF EXISTS worktrees;
     `);
-  } else if (hasId && hasCity && !hasDomain) {
-    // v2 schema used city column — rename to domain in place.
-    db.exec("ALTER TABLE worktrees RENAME COLUMN city TO domain");
+  } else if (hasId && legacyIdentifier && !hasSlug) {
+    // Rename the legacy identifier column (city/domain) to slug in place.
+    db.exec(`ALTER TABLE worktrees RENAME COLUMN ${legacyIdentifier.name} TO slug`);
   }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS worktrees (
       id            TEXT PRIMARY KEY,
       name          TEXT NOT NULL,
-      domain        TEXT NOT NULL UNIQUE,
+      slug          TEXT NOT NULL UNIQUE,
       project_root  TEXT NOT NULL,
       created_at    INTEGER NOT NULL
     );
@@ -71,9 +73,9 @@ function migrate(db: DatabaseSync): void {
   `);
 }
 
-function pickDomain(db: DatabaseSync, hint?: string): string {
-  const takenRows = db.prepare("SELECT domain FROM worktrees").all() as { domain: string }[];
-  const taken = new Set(takenRows.map((r) => r.domain));
+function pickSlug(db: DatabaseSync, hint?: string): string {
+  const takenRows = db.prepare("SELECT slug FROM worktrees").all() as { slug: string }[];
+  const taken = new Set(takenRows.map((r) => r.slug));
   if (hint && !taken.has(hint)) return hint;
   const available = BUNDLED_ANIMALS.filter((a) => !taken.has(a));
   if (available.length === 0) {
@@ -86,7 +88,7 @@ function pickDomain(db: DatabaseSync, hint?: string): string {
 }
 
 export interface AllocationResult {
-  domain: string;
+  slug: string;
   ports: Record<string, number>;
 }
 
@@ -107,7 +109,7 @@ export function allocateWorktree(
       throw new Error(`Worktree at '${id}' is already registered. Run 'wtenv deregister' first.`);
     }
 
-    const domain = pickDomain(db, options.domainHint);
+    const slug = pickSlug(db, options.slugHint);
 
     const usedPorts = new Set<number>(
       (db.prepare("SELECT port FROM port_assignments").all() as { port: number }[]).map(
@@ -128,14 +130,14 @@ export function allocateWorktree(
     }
 
     const insertWorktree = db.prepare(
-      "INSERT INTO worktrees (id, name, domain, project_root, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO worktrees (id, name, slug, project_root, created_at) VALUES (?, ?, ?, ?, ?)"
     );
     const insertPort = db.prepare(
       "INSERT INTO port_assignments (worktree_id, service_name, port) VALUES (?, ?, ?)"
     );
     db.exec("BEGIN");
     try {
-      insertWorktree.run(id, name, domain, projectRoot, Date.now());
+      insertWorktree.run(id, name, slug, projectRoot, Date.now());
       for (const [service, port] of Object.entries(assignments)) {
         insertPort.run(id, service, port);
       }
@@ -145,7 +147,7 @@ export function allocateWorktree(
       throw err;
     }
 
-    return { domain, ports: assignments };
+    return { slug, ports: assignments };
   } finally {
     db.close();
   }
@@ -171,10 +173,10 @@ export function getWorktree(id: string): Worktree | null {
   }
 }
 
-export function getWorktreeByDomain(domain: string): Worktree | null {
+export function getWorktreeBySlug(slug: string): Worktree | null {
   const db = openDb();
   try {
-    const row = db.prepare("SELECT * FROM worktrees WHERE domain = ?").get(domain) as Worktree | undefined;
+    const row = db.prepare("SELECT * FROM worktrees WHERE slug = ?").get(slug) as Worktree | undefined;
     return row ?? null;
   } finally {
     db.close();

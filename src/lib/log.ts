@@ -25,7 +25,7 @@ export function step(text: string): void {
   console.log(`${c.bold(c.cyan("▸"))} ${c.bold(text)}`);
 }
 
-// Indented detail line under a step — e.g. "→ city: lima"
+// Indented detail line under a step — e.g. "→ slug: tapir"
 export function info(text: string): void {
   console.log(`    ${c.dim("→")} ${text}`);
 }

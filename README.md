@@ -7,7 +7,7 @@ Per-worktree DNS namespaces, HTTPS reverse proxying, port allocation, and databa
 When you work across multiple git worktrees (e.g. `main`, `feature/payments`, `fix/auth`), each needs its own ports, local domain, and optionally its own database. wtenv automates all of that through a plugin pipeline defined in a `.wtenv.config.js` at your git root:
 
 - **Port allocation** — assigns unique ports to each service per worktree, no conflicts
-- **DNS** — checks out an animal name from a bundled pool and routes `*.{domain}.test` to localhost via dnsmasq. `WTENV_DOMAIN` is auto-exported so processes can identify their own domain.
+- **DNS** — checks out an animal name (the slug) from a bundled pool and routes `*.{slug}.test` to localhost via dnsmasq. `WTENV_SLUG` and `WTENV_DOMAIN` (`{slug}.{tld}`) are auto-exported so processes can identify themselves.
 - **HTTPS** — configures Caddy to reverse-proxy each service with a trusted local certificate
 - **File copying** — seeds credentials and config files from the main checkout into each worktree
 - **Database provisioning** — creates and optionally forks an isolated PostgreSQL database per worktree
@@ -68,7 +68,7 @@ import { defineConfig, defaultPlugins, copyFiles, shell, postgres } from 'wtenv'
 export default defineConfig({
   tld: 'test',
   services: {
-    web:  { hostname: '*',      env: { PORT: '{port}', APP_DOMAIN: '{host}' } },
+    web:  { hostname: '*',      env: { PORT: '{port}', APP_DOMAIN: '{domain}' } },
     vite: { hostname: 'assets', env: { VITE_RUBY_PORT: '{port}', VITE_HMR_HOST: '{fqdn}' } },
   },
   plugins: [
@@ -81,7 +81,7 @@ export default defineConfig({
       ],
     }),
     postgres({
-      namePattern: 'myapp_development_{domain}',
+      namePattern: 'myapp_development_{slug}',
       forkFrom:    'myapp_development',
       host: 'localhost', port: 5432,
       username: 'myapp', password: 'secret',
@@ -127,13 +127,13 @@ The `env` map on each service supports these template variables:
 |---|---|
 | `{port}` | Allocated port number |
 | `{worktree}` | Display name (worktree directory basename — may be unstable if conductor renames the directory) |
-| `{domain}` | Checked-out animal name — also auto-exported as `WTENV_DOMAIN` |
+| `{slug}` | Checked-out animal name (the DNS label) — also auto-exported as `WTENV_SLUG` |
 | `{tld}` | Configured TLD (e.g. `test`) |
-| `{host}` | `{domain}.{tld}` |
+| `{domain}` | `{slug}.{tld}` — the worktree's domain; also auto-exported as `WTENV_DOMAIN` |
 | `{hostname}` | Service's hostname value (empty string for `"*"`) |
-| `{fqdn}` | `{hostname}.{host}`, or just `{host}` when hostname is `"*"` |
+| `{fqdn}` | `{hostname}.{domain}`, or just `{domain}` when hostname is `"*"` |
 
-`WTENV_DOMAIN` is always written into `.env.worktree` so consuming processes can identify their domain without templating it themselves.
+`WTENV_SLUG` (bare label) and `WTENV_DOMAIN` (`{slug}.{tld}`) are always written into `.env.worktree` so consuming processes can identify themselves without templating it.
 
 Example — a service on subdomain `assets`, domain `otter`, `tld=test`, port `3101`:
 
@@ -178,7 +178,7 @@ wtenv layers three dotenv files, each overriding the one before it:
 |---|---|---|
 | `.env` | you (committed) | shared base config |
 | `.env.local` | you (gitignored) | personal/machine-local overrides |
-| `.env.worktree` | `wtenv register` | per-worktree ports, domain, `DATABASE_URL`, `WTENV_DOMAIN`, etc. |
+| `.env.worktree` | `wtenv register` | per-worktree ports, slug, `DATABASE_URL`, `WTENV_SLUG`, `WTENV_DOMAIN`, etc. |
 
 The recommended way to load this stack into your shell is [direnv](https://direnv.net): `wtenv register` writes an `.envrc` that does `dotenv_if_exists` for all three files, so the environment is loaded automatically when you `cd` in.
 
@@ -259,7 +259,7 @@ Both commands read from `.wtenv.config.js` (or `.wtenv.json`) at the git root. P
 | | `wtenv register` | `wtenv project register` |
 |---|---|---|
 | Ports | Dynamically allocated per worktree | Fixed — you specify the port |
-| DNS | `*.{domain}.{tld}` | `*.{baseDomain}` |
+| DNS | `*.{slug}.{tld}` | `*.{baseDomain}` |
 | `.local` support | ✅ yes (sudo on each register) | ✅ yes (sudo on each register) |
 | Intended for | Per-branch environments | Shared/singleton services |
 | Persisted in registry | Yes | No |
@@ -280,7 +280,7 @@ interface Plugin {
 interface PluginContext {
   worktreeId:   string;           // stable identifier (worktree git-dir path — survives directory renames)
   worktreeName: string;           // display name (cwd basename at register time)
-  domain:       string;           // checked-out animal name — used as {domain}.{tld} DNS domain (populated by ports())
+  slug:         string;           // checked-out animal name (DNS label) — forms the domain {slug}.{tld} (populated by ports())
   cwd:          string;           // worktree directory
   configRoot:   string;           // main checkout directory
   ports:        Record<string, number>;  // mutable — populated by ports()
@@ -295,7 +295,7 @@ Plugins run **in order** on register and **in reverse** on deregister (stack dis
 
 #### `ports(opts?)`
 
-Allocates a registry row for the worktree: assigns ports for each service in `config.services` from `portRange`, checks out an unused animal name from the bundled pool (used as the DNS domain), and writes `WTENV_DOMAIN` to `ctx.envVars`. Releases everything on deregister. **Must come before any plugin that reads `ctx.ports` or `ctx.domain`.**
+Allocates a registry row for the worktree: assigns ports for each service in `config.services` from `portRange`, checks out an unused animal name (the slug) from the bundled pool (used as the DNS label), and writes `WTENV_SLUG` and `WTENV_DOMAIN` to `ctx.envVars`. Releases everything on deregister. **Must come before any plugin that reads `ctx.ports` or `ctx.slug`.**
 
 The registry is keyed by the worktree's git-dir path (stable across directory renames), not by the directory basename — so renaming a conductor worktree doesn't orphan its registration.
 
@@ -305,11 +305,11 @@ ports({ portRange: [3100, 4099] })
 
 #### `dns()`
 
-Writes a dnsmasq config file routing `*.{worktreeName}.{tld}` to `127.0.0.1`. Removes it on deregister.
+Writes a dnsmasq config file routing `*.{slug}.{tld}` to `127.0.0.1`. Removes it on deregister.
 
 #### `caddy()`
 
-Pushes reverse-proxy routes to Caddy's admin API — one route per service, using each service's hostname together with the worktree's domain to determine the pattern (`{hostname}.{domain}.{tld}`). Removes routes on deregister.
+Pushes reverse-proxy routes to Caddy's admin API — one route per service, using each service's hostname together with the worktree's slug to determine the pattern (`{hostname}.{slug}.{tld}`). Removes routes on deregister.
 
 #### `serviceEnv()`
 
@@ -354,7 +354,7 @@ Creates a PostgreSQL database for the worktree on register. Optionally forks an 
 
 ```js
 postgres({
-  namePattern: 'myapp_development_{domain}', // {domain} → sanitized animal name ({city}/{worktree} kept as legacy aliases)
+  namePattern: 'myapp_development_{slug}', // {slug} → sanitized animal name
   forkFrom:    'myapp_development',           // optional: clone this database
   host:        'localhost',
   port:        5432,
@@ -408,7 +408,7 @@ wtenv register [name] [--env-file <filename>] [--dry-run]
 
 # Deregister a worktree
 wtenv deregister [name] [--env-file <filename>]
-wtenv deregister --domain <name>  # target by domain name without being in the directory
+wtenv deregister --slug <slug>    # target by slug without being in the directory
 wtenv deregister --stale          # remove all orphaned entries whose worktree no longer exists
 
 # Preview what register would do without making changes
