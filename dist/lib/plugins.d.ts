@@ -35,9 +35,11 @@ export interface DirenvOptions {
 export declare function direnv(options?: DirenvOptions): Plugin;
 export declare function postgres(options: DatabaseConfig): Plugin;
 export interface RedisConfig {
-    serviceName?: string;
     envVar?: string;
-    portEnvVar?: string;
-    extraArgs?: string[];
+    host?: string;
+    port?: number;
+    flushOnDeregister?: boolean;
+    dbStart?: number;
+    dbEnd?: number;
 }
 export declare function redis(options?: RedisConfig): Plugin;

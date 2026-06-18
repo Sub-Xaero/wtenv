@@ -7,7 +7,7 @@ import { registerCaddy, deregisterCaddy } from "./caddy.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./mdns.js";
 import { provisionDatabase, teardownDatabase } from "./database.js";
 import { provisionRedis, teardownRedis } from "./redis.js";
-import { allocateWorktree, releaseWorktree } from "./registry.js";
+import { allocateWorktree, releaseWorktree, allocateRedisDb, releaseRedisDb, getRedisDb } from "./registry.js";
 import { info, cmd, warn } from "./log.js";
 // Allocates the worktree's registry row, including a checked-out animal name
 // (the slug) from the bundled pool and per-service ports. Also seeds `ctx.slug`
@@ -284,24 +284,20 @@ export function postgres(options) {
     };
 }
 export function redis(options = {}) {
-    const { serviceName = "redis", envVar = "REDIS_URL", portEnvVar, extraArgs } = options;
+    const { envVar = "REDIS_URL", host, port, flushOnDeregister, dbStart, dbEnd } = options;
     return {
         name: "wtenv:redis",
         onRegister(ctx) {
-            const port = ctx.ports[serviceName];
-            if (port === undefined) {
-                throw new Error(`redis: no port allocated for service '${serviceName}'. ` +
-                    `Add '${serviceName}: { hostname: false }' to your wtenv config's services.`);
-            }
-            const url = provisionRedis(ctx.slug, port, extraArgs);
+            const dbIndex = allocateRedisDb(ctx.worktreeId, { dbStart, dbEnd });
+            const url = provisionRedis(ctx.slug, dbIndex, { host, port });
             ctx.envVars[envVar] = url;
-            if (portEnvVar)
-                ctx.envVars[portEnvVar] = String(port);
         },
         onDeregister(ctx) {
-            const port = ctx.ports[serviceName];
-            if (port !== undefined)
-                teardownRedis(ctx.slug, port);
+            const dbIndex = getRedisDb(ctx.worktreeId);
+            if (dbIndex !== null) {
+                teardownRedis(ctx.slug, dbIndex, { host, port, flushOnDeregister });
+                releaseRedisDb(ctx.worktreeId);
+            }
         },
     };
 }

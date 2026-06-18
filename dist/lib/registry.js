@@ -49,6 +49,13 @@ function migrate(db) {
       PRIMARY KEY (worktree_id, service_name),
       FOREIGN KEY (worktree_id) REFERENCES worktrees(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS redis_databases (
+      worktree_id   TEXT NOT NULL UNIQUE,
+      db_index      INTEGER NOT NULL UNIQUE,
+      PRIMARY KEY (worktree_id),
+      FOREIGN KEY (worktree_id) REFERENCES worktrees(id) ON DELETE CASCADE
+    );
   `);
 }
 function pickSlug(db, hint) {
@@ -173,6 +180,50 @@ export function isRegistered(id) {
     try {
         const row = db.prepare("SELECT id FROM worktrees WHERE id = ?").get(id);
         return row !== undefined;
+    }
+    finally {
+        db.close();
+    }
+}
+export function allocateRedisDb(worktreeId, opts) {
+    const dbStart = opts?.dbStart ?? 0;
+    const dbEnd = opts?.dbEnd ?? 1023;
+    const db = openDb();
+    try {
+        const taken = db
+            .prepare("SELECT db_index FROM redis_databases")
+            .all();
+        const used = new Set(taken.map((r) => r.db_index));
+        let dbIndex = dbStart;
+        while (used.has(dbIndex)) {
+            dbIndex++;
+            if (dbIndex > dbEnd) {
+                throw new Error(`Redis database index pool exhausted (${dbStart}–${dbEnd})`);
+            }
+        }
+        db.prepare("INSERT INTO redis_databases (worktree_id, db_index) VALUES (?, ?)").run(worktreeId, dbIndex);
+        return dbIndex;
+    }
+    finally {
+        db.close();
+    }
+}
+export function getRedisDb(worktreeId) {
+    const db = openDb();
+    try {
+        const row = db
+            .prepare("SELECT db_index FROM redis_databases WHERE worktree_id = ?")
+            .get(worktreeId);
+        return row?.db_index ?? null;
+    }
+    finally {
+        db.close();
+    }
+}
+export function releaseRedisDb(worktreeId) {
+    const db = openDb();
+    try {
+        db.prepare("DELETE FROM redis_databases WHERE worktree_id = ?").run(worktreeId);
     }
     finally {
         db.close();

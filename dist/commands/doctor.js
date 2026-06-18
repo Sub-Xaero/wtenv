@@ -75,6 +75,27 @@ export async function doctor() {
     else {
         check("PostgreSQL reachable", "warn", pg.stdout?.trim() || "not responding", "start PostgreSQL (e.g. 'brew services start postgresql@16')");
     }
+    const redis = spawnSync("redis-cli", ["PING"], { encoding: "utf8" });
+    if (redis.error && redis.error.code === "ENOENT") {
+        check("Redis reachable", "warn", "redis-cli not found — redis may not be installed");
+    }
+    else if (redis.status === 0 && redis.stdout?.trim() === "PONG") {
+        check("Redis reachable", "pass");
+        const dbCfg = spawnSync("redis-cli", ["CONFIG", "GET", "databases"], { encoding: "utf8" });
+        if (dbCfg.status === 0) {
+            const lines = dbCfg.stdout?.trim().split("\n") ?? [];
+            const val = parseInt(lines[1], 10);
+            if (!isNaN(val) && val <= 16) {
+                check("Redis databases config", "warn", `default (${val}) — too few for multiple worktrees`, "add 'databases 1024' to /opt/homebrew/etc/redis.conf and restart redis");
+            }
+            else if (!isNaN(val)) {
+                check("Redis databases config", "pass", String(val));
+            }
+        }
+    }
+    else {
+        check("Redis reachable", "warn", "not responding", "start Redis (e.g. 'brew services start redis')");
+    }
     console.log();
     // ── Config ───────────────────────────────────────────────────────────────────
     step("config");

@@ -1,59 +1,50 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { info, warn } from "./log.js";
 
-function redisDir(slug: string): string {
-  return join(tmpdir(), `wtenv-redis-${slug}`);
+const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_PORT = 6379;
+
+export function provisionRedis(
+  slug: string,
+  dbIndex: number,
+  opts?: { host?: string; port?: number }
+): string {
+  const host = opts?.host ?? DEFAULT_HOST;
+  const port = opts?.port ?? DEFAULT_PORT;
+
+  const ping = spawnSync("redis-cli", ["-h", host, "-p", String(port), "PING"], {
+    stdio: "pipe",
+  });
+  if (ping.status !== 0) {
+    const stderr = ping.stderr?.toString().trim();
+    throw new Error(
+      `redis is not reachable at ${host}:${port} — ` +
+        (stderr || "make sure redis is installed and running (e.g. 'brew services start redis')")
+    );
+  }
+
+  info(`allocated redis database ${dbIndex} at ${host}:${port}`);
+  return `redis://${host}:${port}/${dbIndex}`;
 }
 
-function redisLogFile(slug: string): string {
-  return join(tmpdir(), `wtenv-redis-${slug}.log`);
-}
+export function teardownRedis(
+  slug: string,
+  dbIndex: number,
+  opts?: { host?: string; port?: number; flushOnDeregister?: boolean }
+): void {
+  const host = opts?.host ?? DEFAULT_HOST;
+  const port = opts?.port ?? DEFAULT_PORT;
 
-export function provisionRedis(slug: string, port: number, extraArgs: string[] = []): string {
-  const dir = redisDir(slug);
-  mkdirSync(dir, { recursive: true });
-
-  const args = [
-    "--port", String(port),
-    "--daemonize", "yes",
-    "--logfile", redisLogFile(slug),
-    "--dir", dir,
-    ...extraArgs,
-  ];
-
-  const result = spawnSync("redis-server", args, { stdio: "pipe" });
-
-  if (result.status !== 0) {
-    const stderr = result.stderr?.toString() ?? "";
-    const stdout = result.stdout?.toString() ?? "";
-    const output = stderr || stdout;
-    if (output.toLowerCase().includes("already")) {
-      info(`redis already running on port ${port} — skipping`);
-      return `redis://127.0.0.1:${port}`;
+  if (opts?.flushOnDeregister ?? true) {
+    const result = spawnSync(
+      "redis-cli",
+      ["-h", host, "-p", String(port), "-n", String(dbIndex), "FLUSHDB"],
+      { stdio: "pipe" }
+    );
+    if (result.status !== 0) {
+      warn(`FLUSHDB failed: ${result.stderr?.toString().trim() || "unknown error"}`);
+    } else {
+      info(`flushed redis database ${dbIndex}`);
     }
-    throw new Error(`redis-server failed: ${output.trim()}`);
-  }
-
-  info(`started redis on port ${port}`);
-  return `redis://127.0.0.1:${port}`;
-}
-
-export function teardownRedis(slug: string, port: number): void {
-  const result = spawnSync("redis-cli", ["-p", String(port), "shutdown"], { stdio: "pipe" });
-
-  if (result.status !== 0) {
-    const stderr = result.stderr?.toString() ?? "";
-    warn(`redis-cli shutdown: ${stderr.trim() || "unknown error"}`);
-  } else {
-    info(`stopped redis on port ${port}`);
-  }
-
-  try {
-    rmSync(redisDir(slug), { recursive: true, force: true });
-  } catch (err) {
-    warn(`could not remove redis data dir: ${String(err)}`);
   }
 }

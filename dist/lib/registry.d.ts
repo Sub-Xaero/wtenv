@@ -26,3 +26,9 @@ export declare function listWorktrees(): Array<Worktree & {
     ports: Record<string, number>;
 }>;
 export declare function isRegistered(id: string): boolean;
+export declare function allocateRedisDb(worktreeId: string, opts?: {
+    dbStart?: number;
+    dbEnd?: number;
+}): number;
+export declare function getRedisDb(worktreeId: string): number | null;
+export declare function releaseRedisDb(worktreeId: string): void;

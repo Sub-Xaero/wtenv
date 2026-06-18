@@ -7,7 +7,7 @@ import { registerCaddy, deregisterCaddy } from "./caddy.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./mdns.js";
 import { provisionDatabase, teardownDatabase } from "./database.js";
 import { provisionRedis, teardownRedis } from "./redis.js";
-import { allocateWorktree, releaseWorktree } from "./registry.js";
+import { allocateWorktree, releaseWorktree, allocateRedisDb, releaseRedisDb, getRedisDb } from "./registry.js";
 import { info, cmd, warn } from "./log.js";
 import type { Plugin, PluginContext, DatabaseConfig } from "./config.js";
 
@@ -343,36 +343,38 @@ export function postgres(options: DatabaseConfig): Plugin {
 }
 
 export interface RedisConfig {
-  // Service name key in ctx.ports. Must match a service entry in the wtenv config
-  // so that ports() allocates a port for it. Defaults to "redis".
-  serviceName?: string;
   // Env var for the Redis URL written to .env.worktree. Defaults to "REDIS_URL".
   envVar?: string;
-  // Optional separate env var for just the port number, e.g. "REDIS_PORT".
-  portEnvVar?: string;
-  // Extra args passed to redis-server, e.g. ["--maxmemory", "100mb"].
-  extraArgs?: string[];
+  // Host where redis is running. Defaults to "127.0.0.1".
+  host?: string;
+  // Port where redis is listening. Defaults to 6379.
+  port?: number;
+  // Whether to FLUSHDB on deregister. Defaults to true.
+  flushOnDeregister?: boolean;
+  // First logical database index in the allocation pool (inclusive).
+  // Set this to reserve lower indices for manual use or the root workspace.
+  // Defaults to 0.
+  dbStart?: number;
+  // Last logical database index in the allocation pool (inclusive).
+  // Defaults to 1023.
+  dbEnd?: number;
 }
 
 export function redis(options: RedisConfig = {}): Plugin {
-  const { serviceName = "redis", envVar = "REDIS_URL", portEnvVar, extraArgs } = options;
+  const { envVar = "REDIS_URL", host, port, flushOnDeregister, dbStart, dbEnd } = options;
   return {
     name: "wtenv:redis",
     onRegister(ctx: PluginContext) {
-      const port = ctx.ports[serviceName];
-      if (port === undefined) {
-        throw new Error(
-          `redis: no port allocated for service '${serviceName}'. ` +
-          `Add '${serviceName}: { hostname: false }' to your wtenv config's services.`
-        );
-      }
-      const url = provisionRedis(ctx.slug, port, extraArgs);
+      const dbIndex = allocateRedisDb(ctx.worktreeId, { dbStart, dbEnd });
+      const url = provisionRedis(ctx.slug, dbIndex, { host, port });
       ctx.envVars[envVar] = url;
-      if (portEnvVar) ctx.envVars[portEnvVar] = String(port);
     },
     onDeregister(ctx: PluginContext) {
-      const port = ctx.ports[serviceName];
-      if (port !== undefined) teardownRedis(ctx.slug, port);
+      const dbIndex = getRedisDb(ctx.worktreeId);
+      if (dbIndex !== null) {
+        teardownRedis(ctx.slug, dbIndex, { host, port, flushOnDeregister });
+        releaseRedisDb(ctx.worktreeId);
+      }
     },
   };
 }
