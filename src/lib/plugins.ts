@@ -13,17 +13,19 @@ import type { Plugin, PluginContext, DatabaseConfig } from "./config.js";
 
 export interface PortsPlugin extends Plugin {
   portRange: [number, number];
+  slugHint?: string;
 }
 
 // Allocates the worktree's registry row, including a checked-out animal name
 // (the slug) from the bundled pool and per-service ports. Also seeds `ctx.slug`
 // and exports `WTENV_SLUG` (the bare label) plus `WTENV_DOMAIN` (slug.tld) so
 // downstream plugins (and the consuming app) can read them.
-export function ports(options?: { portRange?: [number, number] }): PortsPlugin {
+export function ports(options?: { portRange?: [number, number]; slug?: string }): PortsPlugin {
   const portRange: [number, number] = options?.portRange ?? [3100, 4099];
   return {
     name: "wtenv:ports",
     portRange,
+    slugHint: options?.slug,
     onRegister(ctx) {
       const serviceNames = Object.keys(ctx.config.services);
       const { slug, ports: allocated } = allocateWorktree(
@@ -31,7 +33,8 @@ export function ports(options?: { portRange?: [number, number] }): PortsPlugin {
         ctx.worktreeName,
         ctx.cwd,
         serviceNames,
-        portRange
+        portRange,
+        { slugHint: this.slugHint }
       );
       ctx.slug = slug;
       Object.assign(ctx.ports, allocated);

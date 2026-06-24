@@ -18,9 +18,10 @@ export function ports(options) {
     return {
         name: "wtenv:ports",
         portRange,
+        slugHint: options?.slug,
         onRegister(ctx) {
             const serviceNames = Object.keys(ctx.config.services);
-            const { slug, ports: allocated } = allocateWorktree(ctx.worktreeId, ctx.worktreeName, ctx.cwd, serviceNames, portRange);
+            const { slug, ports: allocated } = allocateWorktree(ctx.worktreeId, ctx.worktreeName, ctx.cwd, serviceNames, portRange, { slugHint: this.slugHint });
             ctx.slug = slug;
             Object.assign(ctx.ports, allocated);
             ctx.envVars.WTENV_SLUG = slug;

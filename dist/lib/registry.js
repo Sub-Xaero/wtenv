@@ -5,6 +5,11 @@ import { join } from "node:path";
 import { BUNDLED_ANIMALS } from "./animals.js";
 const DB_DIR = join(homedir(), ".wtenv");
 const DB_PATH = join(DB_DIR, "registry.db");
+export function validateSlug(slug) {
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug)) {
+        throw new Error(`Invalid slug '${slug}'. Use a DNS-safe label: lowercase letters, numbers, and hyphens.`);
+    }
+}
 function openDb() {
     if (!existsSync(DB_DIR))
         mkdirSync(DB_DIR, { recursive: true });
@@ -61,8 +66,13 @@ function migrate(db) {
 function pickSlug(db, hint) {
     const takenRows = db.prepare("SELECT slug FROM worktrees").all();
     const taken = new Set(takenRows.map((r) => r.slug));
-    if (hint && !taken.has(hint))
+    if (hint) {
+        validateSlug(hint);
+        if (taken.has(hint)) {
+            throw new Error(`Slug '${hint}' is already in use.`);
+        }
         return hint;
+    }
     const available = BUNDLED_ANIMALS.filter((a) => !taken.has(a));
     if (available.length === 0) {
         throw new Error(`Animal pool exhausted (${BUNDLED_ANIMALS.length} animals, ${taken.size} taken). ` +
@@ -118,6 +128,23 @@ export function releaseWorktree(id) {
     try {
         // ON DELETE CASCADE cleans up port_assignments
         db.prepare("DELETE FROM worktrees WHERE id = ?").run(id);
+    }
+    finally {
+        db.close();
+    }
+}
+export function renameWorktreeSlug(id, slug) {
+    validateSlug(slug);
+    const db = openDb();
+    try {
+        const existing = db.prepare("SELECT id FROM worktrees WHERE slug = ?").get(slug);
+        if (existing && existing.id !== id) {
+            throw new Error(`Slug '${slug}' is already in use.`);
+        }
+        const result = db.prepare("UPDATE worktrees SET slug = ? WHERE id = ?").run(slug, id);
+        if (result.changes === 0) {
+            throw new Error(`No registered worktree found for '${id}'.`);
+        }
     }
     finally {
         db.close();

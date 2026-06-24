@@ -16,13 +16,18 @@ export async function register(name, opts = {}) {
     }
     const worktreeName = name ?? basename(cwd);
     const config = await loadConfig(configRoot);
+    const portsPlugin = config.plugins.find((p) => p.name === "wtenv:ports");
+    if (opts.slug && portsPlugin)
+        portsPlugin.slugHint = opts.slug;
     if (opts.dryRun) {
-        const portsPlugin = config.plugins.find((p) => p.name === "wtenv:ports");
         const [rangeStart] = portsPlugin?.portRange ?? [3100, 4099];
+        const slug = opts.slug ?? "<slug>";
         header(`Dry run: registering '${worktreeName}'`);
         console.log(`    ${c.dim("id:")}     ${id}`);
         console.log(`    ${c.dim("cwd:")}    ${cwd}`);
         console.log(`    ${c.dim("config:")} ${configRoot}`);
+        if (opts.slug)
+            console.log(`    ${c.dim("slug:")}   ${opts.slug}`);
         console.log();
         step("would allocate");
         let nextPort = rangeStart;
@@ -30,8 +35,8 @@ export async function register(name, opts = {}) {
             const hostname = cfg.hostname === false
                 ? null
                 : cfg.hostname === "*"
-                    ? `*.<slug>.${config.tld}`
-                    : `${cfg.hostname}.<slug>.${config.tld}`;
+                    ? `*.${slug}.${config.tld}`
+                    : `${cfg.hostname}.${slug}.${config.tld}`;
             info(`${service}: port ${nextPort}${hostname ? `  →  https://${hostname}` : ""}`);
             nextPort++;
         }

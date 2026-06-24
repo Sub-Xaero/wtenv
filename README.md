@@ -405,6 +405,7 @@ wtenv init [--force] [--cwd <path>]
 
 # Register a worktree — auto-detects name, cwd, and config from git
 wtenv register [name] [--env-file <filename>] [--dry-run]
+wtenv register --slug otter       # request a memorable DNS label
 
 # Deregister a worktree
 wtenv deregister [name] [--env-file <filename>]
@@ -417,6 +418,10 @@ wtenv register --dry-run
 # List all registered worktrees with ports and URLs
 wtenv list
 wtenv list --json
+
+# Inspect and manage DNS slugs
+wtenv list-slugs [--json]
+wtenv rename-slug otter
 
 # Check dnsmasq and Caddy health
 wtenv status

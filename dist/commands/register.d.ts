@@ -3,6 +3,7 @@ interface RegisterOptions {
     configRoot?: string;
     envFile?: string;
     dryRun?: boolean;
+    slug?: string;
 }
 export declare function register(name: string | undefined, opts?: RegisterOptions): Promise<void>;
 export {};

@@ -1,9 +1,11 @@
 import type { Plugin, DatabaseConfig } from "./config.js";
 export interface PortsPlugin extends Plugin {
     portRange: [number, number];
+    slugHint?: string;
 }
 export declare function ports(options?: {
     portRange?: [number, number];
+    slug?: string;
 }): PortsPlugin;
 export declare function dns(): Plugin;
 export declare function caddy(): Plugin;

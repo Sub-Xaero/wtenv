@@ -16,6 +16,7 @@ import { open, projectOpen } from "./commands/open.js";
 import { kill, projectKill } from "./commands/kill.js";
 import { envExport, envUnset, envShow } from "./commands/env.js";
 import { run } from "./commands/run.js";
+import { listSlugs, renameSlug } from "./commands/slug.js";
 
 const program = new Command();
 
@@ -83,9 +84,36 @@ program
   .description("Allocate ports, configure DNS + proxy, write .env.worktree")
   .option("--env-file <filename>", "Env file name to write", ".env.worktree")
   .option("--dry-run", "Show what would be allocated without making changes")
-  .action(async (name: string | undefined, opts: { envFile: string; dryRun: boolean }) => {
+  .option("--slug <slug>", "Use a specific DNS slug if available")
+  .action(async (name: string | undefined, opts: { envFile: string; dryRun: boolean; slug?: string }) => {
     try {
-      await register(name, { envFile: opts.envFile, dryRun: opts.dryRun });
+      await register(name, { envFile: opts.envFile, dryRun: opts.dryRun, slug: opts.slug });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("list-slugs")
+  .description("List bundled slugs and which ones are already taken")
+  .option("--json", "Print machine-readable JSON")
+  .action((opts: { json?: boolean }) => {
+    try {
+      listSlugs({ json: opts.json });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("rename-slug <slug>")
+  .description("Rename the current worktree's DNS slug")
+  .option("--env-file <filename>", "Env file name to update", ".env.worktree")
+  .action(async (slug: string, opts: { envFile: string }) => {
+    try {
+      await renameSlug(slug, { envFile: opts.envFile });
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);

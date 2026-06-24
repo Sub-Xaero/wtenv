@@ -13,12 +13,14 @@ export interface PortAssignment {
 export interface AllocateOptions {
     slugHint?: string;
 }
+export declare function validateSlug(slug: string): void;
 export interface AllocationResult {
     slug: string;
     ports: Record<string, number>;
 }
 export declare function allocateWorktree(id: string, name: string, projectRoot: string, services: string[], portRange: [number, number], options?: AllocateOptions): AllocationResult;
 export declare function releaseWorktree(id: string): void;
+export declare function renameWorktreeSlug(id: string, slug: string): void;
 export declare function getWorktree(id: string): Worktree | null;
 export declare function getWorktreeBySlug(slug: string): Worktree | null;
 export declare function getWorktreePorts(id: string): Record<string, number>;
