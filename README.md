@@ -315,6 +315,17 @@ Pushes reverse-proxy routes to Caddy's admin API — one route per service, usin
 
 Iterates `config.services`, expands each service's `env` template map using `ctx.ports`, and writes the results into `ctx.envVars`. Runs after `ports()` so port values are available.
 
+#### `direnv(options?)`
+
+Writes an `.envrc` that loads the same dotenv stack used by `wtenv env`: `.env`, `.env.local`, then `.env.worktree` (or a custom worktree env file). Removes the generated `.envrc` on deregister.
+
+```js
+direnv()
+direnv({ envFile: '.env.branch' })
+```
+
+Use this when you want `direnv` to automatically load each worktree's generated environment as you `cd` between worktrees.
+
 #### `defaultPlugins(opts?)`
 
 Convenience function returning `[ports(opts), dns(), caddy(), serviceEnv()]` — the standard infrastructure quartet. Spread it at the start of your plugins array.
@@ -365,6 +376,23 @@ postgres({
 ```
 
 The allocated `DATABASE_URL` is available to subsequent plugins (e.g. `shell`).
+
+#### `redis(options?)`
+
+Allocates a Redis logical database index per worktree, writes a Redis URL to `ctx.envVars`, and optionally flushes that database on deregister.
+
+```js
+redis({
+  envVar: 'REDIS_URL',       // default
+  host: '127.0.0.1',         // default
+  port: 6379,                // default
+  dbStart: 0,                // default
+  dbEnd: 1023,               // default
+  flushOnDeregister: true,   // default
+})
+```
+
+The generated URL looks like `redis://127.0.0.1:6379/17`, where the final path segment is the allocated database index. If you use many worktrees, make sure Redis is configured with enough logical databases; `wtenv doctor` warns when Redis still has the small default.
 
 #### `shell(options)`
 
