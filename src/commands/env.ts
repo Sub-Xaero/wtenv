@@ -1,45 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { parseEnv } from "node:util";
-import { DOTENV_LAYERS } from "../lib/plugins.js";
+import { loadEnvStack } from "../lib/env-stack.js";
 import { step, info, warn, c } from "../lib/log.js";
 
 export interface EnvCommandOptions {
   cwd?: string;
   envFile?: string;
-}
-
-interface LoadedStack {
-  cwd: string;
-  layers: string[]; // file names in priority order (lowest → highest)
-  present: string[]; // layers that actually exist on disk
-  merged: Record<string, string>;
-  source: Record<string, string>; // key → the layer its final value came from
-}
-
-// Read the full dotenv stack from disk and merge it. Layering matches the
-// generated .envrc (.env < .env.local < .env.worktree) and the spawn path in
-// plugins.ts, but here we read all three from disk directly — by the time these
-// commands run, .env.worktree already exists — and we never seed from
-// process.env, so callers see only what the files define.
-function loadEnvStack(options: EnvCommandOptions): LoadedStack {
-  const cwd = resolve(options.cwd ?? process.cwd());
-  const layers = [...DOTENV_LAYERS, options.envFile ?? ".env.worktree"];
-
-  const merged: Record<string, string> = {};
-  const source: Record<string, string> = {};
-  const present: string[] = [];
-  for (const file of layers) {
-    const p = join(cwd, file);
-    if (!existsSync(p)) continue;
-    present.push(file);
-    const parsed = parseEnv(readFileSync(p, "utf8")) as Record<string, string>;
-    for (const [key, value] of Object.entries(parsed)) {
-      merged[key] = value;
-      source[key] = file;
-    }
-  }
-  return { cwd, layers, present, merged, source };
 }
 
 // POSIX single-quoting: wrap in single quotes and break out for embedded

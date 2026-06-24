@@ -440,6 +440,10 @@ eval "$(wtenv env export)"   # export KEY=VALUE lines for the current shell
 wtenv env show               # human-readable merged stack with source layers
 eval "$(wtenv env unset)"    # unset every key the stack defines
 
+# Run a command with the env stack loaded
+wtenv run npm run dev
+wtenv run bundle exec rails s
+
 # Register/deregister/open/kill static project domains (non-worktree)
 wtenv project register [--config-root <path>]
 wtenv project deregister [--config-root <path>]

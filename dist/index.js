@@ -15,11 +15,27 @@ import { projectInit, projectRegister, projectDeregister } from "./commands/proj
 import { open, projectOpen } from "./commands/open.js";
 import { kill, projectKill } from "./commands/kill.js";
 import { envExport, envUnset, envShow } from "./commands/env.js";
+import { run } from "./commands/run.js";
 const program = new Command();
 program
     .name("wtenv")
     .description("Worktree environment manager for Conductor-managed git worktrees")
     .version("0.1.0");
+program
+    .command("run <command...>")
+    .description("Run a command with the .env/.env.local/.env.worktree stack loaded")
+    .option("--env-file <filename>", "Worktree env file name", ".env.worktree")
+    .option("--cwd <path>", "Directory to read env files from and run in (default: current directory)")
+    .allowUnknownOption(true)
+    .action((command, opts) => {
+    try {
+        run(command, { envFile: opts.envFile, cwd: opts.cwd });
+    }
+    catch (err) {
+        console.error(err instanceof Error ? err.message : err);
+        process.exit(1);
+    }
+});
 program
     .command("setup")
     .description("One-time macOS setup: dnsmasq, /etc/resolver/test, Caddy CA trust")
