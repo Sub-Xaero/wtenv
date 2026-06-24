@@ -137,9 +137,10 @@ program
 program
     .command("list")
     .description("List active worktrees with their ports and URLs")
-    .action(async () => {
+    .option("--json", "Print machine-readable JSON")
+    .action(async (opts) => {
     try {
-        await list();
+        await list({ json: opts.json });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
@@ -188,9 +189,10 @@ program
 program
     .command("status")
     .description("Check dnsmasq and Caddy health")
-    .action(async () => {
+    .option("--json", "Print machine-readable JSON")
+    .action(async (opts) => {
     try {
-        await status();
+        await status({ json: opts.json });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
@@ -247,9 +249,10 @@ envCmd
     .description("Show the merged env stack with the layer each value came from")
     .option("--env-file <filename>", "Worktree env file name", ".env.worktree")
     .option("--cwd <path>", "Directory to read env files from (default: current directory)")
+    .option("--json", "Print machine-readable JSON")
     .action((opts) => {
     try {
-        envShow({ envFile: opts.envFile, cwd: opts.cwd });
+        envShow({ envFile: opts.envFile, cwd: opts.cwd, json: opts.json });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);

@@ -40,6 +40,10 @@ export function envShow(options = {}) {
         warn(`no env files found in ${stack.cwd} (looked for ${stack.layers.join(", ")})`);
         return;
     }
+    if (options.json) {
+        console.log(JSON.stringify(stack, null, 2));
+        return;
+    }
     const keys = Object.keys(stack.merged).sort();
     step(`env stack  ${c.dim(`(${stack.present.join(" < ")})`)}`);
     const pad = Math.max(...keys.map((k) => k.length));

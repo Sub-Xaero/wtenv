@@ -4,6 +4,7 @@ import { step, info, warn, c } from "../lib/log.js";
 export interface EnvCommandOptions {
   cwd?: string;
   envFile?: string;
+  json?: boolean;
 }
 
 // POSIX single-quoting: wrap in single quotes and break out for embedded
@@ -48,6 +49,11 @@ export function envShow(options: EnvCommandOptions = {}): void {
   const stack = loadEnvStack(options);
   if (stack.present.length === 0) {
     warn(`no env files found in ${stack.cwd} (looked for ${stack.layers.join(", ")})`);
+    return;
+  }
+
+  if (options.json) {
+    console.log(JSON.stringify(stack, null, 2));
     return;
   }
 

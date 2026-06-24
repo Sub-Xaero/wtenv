@@ -2,9 +2,13 @@ import { listWorktrees } from "../lib/registry.js";
 import { loadConfig } from "../lib/config.js";
 import { gitRoot } from "../lib/git.js";
 import { header, step, info, c } from "../lib/log.js";
-export async function list() {
+export async function list(options = {}) {
     const worktrees = listWorktrees();
     if (worktrees.length === 0) {
+        if (options.json) {
+            console.log(JSON.stringify({ worktrees: [] }, null, 2));
+            return;
+        }
         info("No worktrees registered");
         return;
     }
@@ -22,28 +26,51 @@ export async function list() {
         }
         return configCache.get(configRoot) ?? null;
     };
-    header(`Registered worktrees (${worktrees.length})`);
+    const rows = [];
     for (const wt of worktrees) {
         const configRoot = gitRoot(wt.project_root) ?? wt.project_root;
         const config = await loadCachedConfig(configRoot);
         const tld = config?.tld ?? "test";
-        const age = formatAge(wt.created_at);
-        console.log();
-        step(`${wt.name}  →  ${wt.slug}.${tld}  ${c.dim(`(${age})`)}`);
-        info(`${c.dim("project:")} ${wt.project_root}`);
-        for (const [service, port] of Object.entries(wt.ports)) {
+        const services = Object.fromEntries(Object.entries(wt.ports).map(([service, port]) => {
             const serviceCfg = config?.services[service];
-            if (serviceCfg) {
-                const hostname = serviceCfg.hostname === false
+            const hostname = serviceCfg
+                ? serviceCfg.hostname === false
                     ? null
                     : serviceCfg.hostname === "*"
                         ? `*.${wt.slug}.${tld}`
-                        : `${serviceCfg.hostname}.${wt.slug}.${tld}`;
-                info(`${service.padEnd(10)} :${port}${hostname ? `   https://${hostname}` : ""}`);
-            }
-            else {
-                info(`${service.padEnd(10)} :${port}`);
-            }
+                        : `${serviceCfg.hostname}.${wt.slug}.${tld}`
+                : null;
+            return [
+                service,
+                {
+                    port,
+                    hostname,
+                    url: hostname ? `https://${hostname}` : null,
+                },
+            ];
+        }));
+        rows.push({
+            id: wt.id,
+            name: wt.name,
+            slug: wt.slug,
+            domain: `${wt.slug}.${tld}`,
+            projectRoot: wt.project_root,
+            createdAt: wt.created_at,
+            services,
+        });
+    }
+    if (options.json) {
+        console.log(JSON.stringify({ worktrees: rows }, null, 2));
+        return;
+    }
+    header(`Registered worktrees (${worktrees.length})`);
+    for (const wt of rows) {
+        const age = formatAge(wt.createdAt);
+        console.log();
+        step(`${wt.name}  →  ${wt.domain}  ${c.dim(`(${age})`)}`);
+        info(`${c.dim("project:")} ${wt.projectRoot}`);
+        for (const [service, details] of Object.entries(wt.services)) {
+            info(`${service.padEnd(10)} :${details.port}${details.hostname ? `   ${details.url}` : ""}`);
         }
     }
     console.log();

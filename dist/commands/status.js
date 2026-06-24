@@ -9,30 +9,38 @@ function check(label, ok, detail) {
     const suffix = detail ? `  ${c.dim(`(${detail})`)}` : "";
     console.log(`    ${icon} ${label}${suffix}`);
 }
-export async function status() {
-    header("wtenv status");
-    console.log();
-    step("infrastructure");
-    check("dnsmasq running", isDnsmasqRunning());
-    check("/etc/resolver/test exists", existsSync("/etc/resolver/test"));
-    const caddyUp = await isCaddyRunning();
-    check("Caddy running (admin :2019)", caddyUp);
-    // DNS resolution test using a registered worktree if available
+export async function status(options = {}) {
+    const checks = [];
+    function record(label, ok, detail) {
+        checks.push({ label, ok, detail });
+    }
+    record("dnsmasq running", isDnsmasqRunning());
+    record("/etc/resolver/test exists", existsSync("/etc/resolver/test"));
+    record("Caddy running (admin :2019)", await isCaddyRunning());
     const worktrees = listWorktrees();
     const probeWorktree = worktrees[0];
     if (probeWorktree) {
         const probeHost = `probe.${probeWorktree.slug}.test`;
         try {
             const { address } = await dns.lookup(probeHost);
-            check("DNS resolves *.test → 127.0.0.1", address === "127.0.0.1", address);
+            record("DNS resolves *.test → 127.0.0.1", address === "127.0.0.1", address);
         }
         catch {
-            check("DNS resolves *.test → 127.0.0.1", false, "failed — run 'wtenv setup' to reconfigure");
+            record("DNS resolves *.test → 127.0.0.1", false, "failed — run 'wtenv setup' to reconfigure");
         }
     }
     else {
-        check("DNS resolves *.test → 127.0.0.1", isDnsmasqRunning(), "no worktrees registered yet to probe");
+        record("DNS resolves *.test → 127.0.0.1", isDnsmasqRunning(), "no worktrees registered yet to probe");
     }
+    if (options.json) {
+        console.log(JSON.stringify({ infrastructure: checks, worktrees }, null, 2));
+        return;
+    }
+    header("wtenv status");
+    console.log();
+    step("infrastructure");
+    for (const item of checks)
+        check(item.label, item.ok, item.detail);
     console.log();
     step(`registered worktrees (${worktrees.length})`);
     if (worktrees.length === 0) {

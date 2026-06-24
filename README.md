@@ -416,9 +416,11 @@ wtenv register --dry-run
 
 # List all registered worktrees with ports and URLs
 wtenv list
+wtenv list --json
 
 # Check dnsmasq and Caddy health
 wtenv status
+wtenv status --json
 
 # Diagnose the full wtenv setup — services, config, and registry
 wtenv doctor
@@ -438,6 +440,7 @@ wtenv kill [--force] [--dry-run]
 # (for shells without direnv — all accept --env-file and --cwd)
 eval "$(wtenv env export)"   # export KEY=VALUE lines for the current shell
 wtenv env show               # human-readable merged stack with source layers
+wtenv env show --json        # machine-readable env stack
 eval "$(wtenv env unset)"    # unset every key the stack defines
 
 # Run a command with the env stack loaded
