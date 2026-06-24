@@ -430,6 +430,9 @@ function myPlugin(options) {
 ```bash
 # Scaffold a .wtenv.config.js with sensible defaults (auto-detects project name and Postgres deps)
 wtenv init [--force] [--cwd <path>]
+wtenv init --preset node
+wtenv init --preset next
+wtenv init --preset rails
 
 # Register a worktree — auto-detects name, cwd, and config from git
 wtenv register [name] [--env-file <filename>] [--dry-run]

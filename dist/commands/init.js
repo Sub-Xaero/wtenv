@@ -36,7 +36,7 @@ function hasPostgresDep(cwd) {
         return false;
     }
 }
-function buildConfig(projectName, withPostgres) {
+function buildDefaultConfig(projectName, withPostgres) {
     const nameComment = projectName ? `  // Project: ${projectName}\n` : "";
     const postgresBlock = withPostgres
         ? `
@@ -86,6 +86,122 @@ ${postgresBlock}
 });
 `;
 }
+function buildNodePreset(projectName) {
+    const nameComment = projectName ? `  // Project: ${projectName}\n` : "";
+    return `import { defineConfig, defaultPlugins, direnv } from "wtenv";
+
+export default defineConfig({
+${nameComment}  tld: "test",
+
+  services: {
+    web: {
+      hostname: "*",
+      env: {
+        PORT: "{port}",
+        APP_URL: "https://{domain}",
+      },
+    },
+  },
+
+  plugins: [
+    ...defaultPlugins({ portRange: [3000, 3999] }),
+    direnv(),
+  ],
+});
+`;
+}
+function buildNextPreset(projectName) {
+    const nameComment = projectName ? `  // Project: ${projectName}\n` : "";
+    return `import { defineConfig, defaultPlugins, direnv } from "wtenv";
+
+export default defineConfig({
+${nameComment}  tld: "test",
+
+  services: {
+    web: {
+      hostname: "*",
+      env: {
+        PORT: "{port}",
+        NEXT_PUBLIC_APP_URL: "https://{domain}",
+      },
+    },
+  },
+
+  plugins: [
+    ...defaultPlugins({ portRange: [3000, 3999] }),
+    direnv(),
+  ],
+});
+`;
+}
+function buildRailsPreset(projectName) {
+    const app = projectName ?? "myapp";
+    return `import { defineConfig, defaultPlugins, copyFiles, direnv, postgres, redis, shell } from "wtenv";
+
+export default defineConfig({
+  // Project: ${app}
+  tld: "test",
+
+  services: {
+    web: {
+      hostname: "*",
+      env: {
+        PORT: "{port}",
+        APP_DOMAIN: "{domain}",
+        APP_URL: "https://{domain}",
+      },
+    },
+    vite: {
+      hostname: "assets",
+      env: {
+        VITE_RUBY_PORT: "{port}",
+        VITE_HMR_HOST: "{fqdn}",
+      },
+    },
+  },
+
+  plugins: [
+    ...defaultPlugins({ portRange: [3100, 4099] }),
+    copyFiles({
+      files: [
+        { src: "config/master.key", optional: true },
+        { src: "config/database.yml", optional: true },
+        { src: "storage", optional: true, symlink: true },
+      ],
+    }),
+    postgres({
+      namePattern: "${app}_development_{slug}",
+      forkFrom: "${app}_development",
+      host: "localhost",
+      port: 5432,
+      username: "postgres",
+      password: "postgres",
+      envVar: "DATABASE_URL",
+    }),
+    redis(),
+    direnv(),
+    shell({
+      onRegister: [
+        "bundle install",
+        "bundle exec rails db:migrate",
+      ],
+    }),
+  ],
+});
+`;
+}
+function buildConfig(projectName, withPostgres, preset) {
+    switch (preset) {
+        case "node":
+            return buildNodePreset(projectName);
+        case "next":
+            return buildNextPreset(projectName);
+        case "rails":
+            return buildRailsPreset(projectName);
+        case "auto":
+            return buildDefaultConfig(projectName, withPostgres);
+    }
+}
 export function init(options = {}) {
     const cwd = options.cwd ?? process.cwd();
     const outPath = join(cwd, ".wtenv.config.js");
@@ -95,9 +211,13 @@ export function init(options = {}) {
     }
     const projectName = detectProjectName(cwd);
     const withPostgres = hasPostgresDep(cwd);
-    writeFileSync(outPath, buildConfig(projectName, withPostgres));
+    const preset = options.preset ?? "auto";
+    writeFileSync(outPath, buildConfig(projectName, withPostgres, preset));
     success(`Created .wtenv.config.js${projectName ? ` for project "${projectName}"` : ""}`);
-    if (withPostgres) {
+    if (preset !== "auto") {
+        info(`preset: ${preset}`);
+    }
+    else if (withPostgres) {
         info("detected Postgres dependency — postgres() plugin snippet included (commented out)");
     }
     console.log();

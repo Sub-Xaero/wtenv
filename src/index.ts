@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { setup } from "./commands/setup.js";
 import { teardown } from "./commands/teardown.js";
 import { init } from "./commands/init.js";
+import type { InitPreset } from "./commands/init.js";
 import { register } from "./commands/register.js";
 import { deregister, deregisterStale } from "./commands/deregister.js";
 import { reregister } from "./commands/reregister.js";
@@ -70,8 +71,12 @@ program
   .description("Scaffold a .wtenv.config.js file with sensible defaults")
   .option("--force", "Overwrite an existing .wtenv.config.js")
   .option("--cwd <path>", "Directory to create the config in (default: current directory)")
-  .action((opts: { force?: boolean; cwd?: string }) => {
+  .option("--preset <preset>", "Starter preset: auto, node, next, rails", "auto")
+  .action((opts: { force?: boolean; cwd?: string; preset: InitPreset }) => {
     try {
+      if (!["auto", "node", "next", "rails"].includes(opts.preset)) {
+        throw new Error(`Unknown preset '${opts.preset}'. Use one of: auto, node, next, rails.`);
+      }
       init(opts);
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);

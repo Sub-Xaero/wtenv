@@ -67,8 +67,12 @@ program
     .description("Scaffold a .wtenv.config.js file with sensible defaults")
     .option("--force", "Overwrite an existing .wtenv.config.js")
     .option("--cwd <path>", "Directory to create the config in (default: current directory)")
+    .option("--preset <preset>", "Starter preset: auto, node, next, rails", "auto")
     .action((opts) => {
     try {
+        if (!["auto", "node", "next", "rails"].includes(opts.preset)) {
+            throw new Error(`Unknown preset '${opts.preset}'. Use one of: auto, node, next, rails.`);
+        }
         init(opts);
     }
     catch (err) {
