@@ -450,6 +450,11 @@ wtenv register --dry-run
 wtenv list
 wtenv list --json
 
+# Print the current worktree's domain and ports for shell/editor integrations
+wtenv current
+wtenv current --format short
+wtenv current --format json
+
 # Inspect and manage DNS slugs
 wtenv list-slugs [--json]
 wtenv rename-slug otter

@@ -17,6 +17,7 @@ import { kill, projectKill } from "./commands/kill.js";
 import { envExport, envUnset, envShow } from "./commands/env.js";
 import { run } from "./commands/run.js";
 import { listSlugs, renameSlug } from "./commands/slug.js";
+import { current } from "./commands/current.js";
 const program = new Command();
 program
     .name("wtenv")
@@ -173,6 +174,23 @@ program
     .action(async (opts) => {
     try {
         await list({ json: opts.json });
+    }
+    catch (err) {
+        console.error(err instanceof Error ? err.message : err);
+        process.exit(1);
+    }
+});
+program
+    .command("current")
+    .description("Print the current worktree's domain and allocated ports")
+    .option("--format <format>", "Output format: readable, short, json", "readable")
+    .option("--cwd <path>", "Directory to inspect (default: current directory)")
+    .action(async (opts) => {
+    try {
+        if (!["readable", "short", "json"].includes(opts.format)) {
+            throw new Error(`Unknown format '${opts.format}'. Use one of: readable, short, json.`);
+        }
+        await current({ format: opts.format, cwd: opts.cwd });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
