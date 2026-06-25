@@ -1,6 +1,6 @@
 import { loadConfig } from "../lib/config.js";
 import { getWorktree, getWorktreePorts } from "../lib/registry.js";
-import { gitRoot, worktreeId, worktreeRoot } from "../lib/git.js";
+import { resolveConfigRoot, worktreeId, worktreeRoot } from "../lib/git.js";
 import { header, info, success, warn, error, c } from "../lib/log.js";
 import { listenersOn, processNames } from "../lib/process.js";
 
@@ -71,7 +71,7 @@ export async function kill(opts: KillOptions = {}): Promise<void> {
     process.exit(1);
   }
 
-  const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
+  const configRoot = opts.configRoot ?? resolveConfigRoot(cwd);
   const config = await loadConfig(configRoot);
   const ports = getWorktreePorts(id);
   const portSummary = Object.entries(ports)
@@ -104,7 +104,7 @@ export async function kill(opts: KillOptions = {}): Promise<void> {
 }
 
 export async function projectKill(opts: ProjectKillOptions = {}): Promise<void> {
-  const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+  const configRoot = opts.configRoot ?? resolveConfigRoot();
   const config = await loadConfig(configRoot);
 
   if (!config.project) {

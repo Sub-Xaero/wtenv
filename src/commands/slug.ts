@@ -13,7 +13,7 @@ import {
   renameWorktreeSlug,
   validateSlug,
 } from "../lib/registry.js";
-import { gitRoot, worktreeId, worktreeRoot } from "../lib/git.js";
+import { resolveConfigRoot, worktreeId, worktreeRoot } from "../lib/git.js";
 import { header, info, success, c } from "../lib/log.js";
 
 interface SlugOptions {
@@ -122,7 +122,7 @@ export async function renameSlug(slug: string, options: RenameSlugOptions = {}):
     return;
   }
 
-  const configRoot = options.configRoot ?? gitRoot(cwd) ?? cwd;
+  const configRoot = options.configRoot ?? resolveConfigRoot(cwd);
   const config = await loadConfig(configRoot);
   const ports = getWorktreePorts(id);
   const oldSlug = wt.slug;

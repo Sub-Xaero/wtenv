@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { loadConfig } from "../lib/config.js";
 import { getWorktree } from "../lib/registry.js";
-import { gitRoot, worktreeId, worktreeRoot } from "../lib/git.js";
+import { resolveConfigRoot, worktreeId, worktreeRoot } from "../lib/git.js";
 import { header, error } from "../lib/log.js";
 
 interface OpenOptions {
@@ -29,7 +29,7 @@ function launch(url: string, print: boolean): void {
 
 export async function open(arg: string | undefined, opts: OpenOptions = {}): Promise<void> {
   const cwd = opts.cwd ?? worktreeRoot() ?? process.cwd();
-  const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
+  const configRoot = opts.configRoot ?? resolveConfigRoot(cwd);
   const id = worktreeId(cwd);
   if (!id) {
     throw new Error(`Could not determine git-dir for ${cwd} — run inside a git worktree.`);
@@ -67,7 +67,7 @@ export async function projectOpen(
   arg: string | undefined,
   opts: ProjectOpenOptions = {}
 ): Promise<void> {
-  const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+  const configRoot = opts.configRoot ?? resolveConfigRoot();
   const config = await loadConfig(configRoot);
   if (!config.project) {
     error("No project config found in .wtenv.config.js");

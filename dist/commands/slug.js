@@ -7,7 +7,7 @@ import { registerCaddy, deregisterCaddy } from "../lib/caddy.js";
 import { registerDnsmasq, deregisterDnsmasq } from "../lib/dnsmasq.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "../lib/mdns.js";
 import { getWorktree, getWorktreePorts, listWorktrees, renameWorktreeSlug, validateSlug, } from "../lib/registry.js";
-import { gitRoot, worktreeId, worktreeRoot } from "../lib/git.js";
+import { resolveConfigRoot, worktreeId, worktreeRoot } from "../lib/git.js";
 import { header, info, success, c } from "../lib/log.js";
 export function listSlugs(options = {}) {
     const worktrees = listWorktrees();
@@ -89,7 +89,7 @@ export async function renameSlug(slug, options = {}) {
         success(`Slug is already '${slug}'`);
         return;
     }
-    const configRoot = options.configRoot ?? gitRoot(cwd) ?? cwd;
+    const configRoot = options.configRoot ?? resolveConfigRoot(cwd);
     const config = await loadConfig(configRoot);
     const ports = getWorktreePorts(id);
     const oldSlug = wt.slug;

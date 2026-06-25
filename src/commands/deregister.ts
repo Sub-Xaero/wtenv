@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { loadConfig } from "../lib/config.js";
 import type { PluginContext } from "../lib/config.js";
 import { getWorktree, getWorktreePorts, getWorktreeBySlug, listWorktrees } from "../lib/registry.js";
-import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
+import { worktreeRoot, resolveConfigRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
 import { header, step, info, success, error, warn } from "../lib/log.js";
 
@@ -42,7 +42,7 @@ export async function deregister(
     throw new Error(`Could not determine git-dir for ${cwd} — run inside a git worktree.`);
   }
 
-  const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
+  const configRoot = opts.configRoot ?? resolveConfigRoot(cwd);
 
   const wt = getWorktree(id);
   if (!wt) {

@@ -5,11 +5,11 @@ import { registerProjectDnsmasq, deregisterProjectDnsmasq } from "../lib/dnsmasq
 import { registerProjectCaddy, deregisterProjectCaddy } from "../lib/caddy.js";
 import { deregisterHostsEntries } from "../lib/hosts.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "../lib/mdns.js";
-import { gitRoot } from "../lib/git.js";
+import { resolveConfigRoot } from "../lib/git.js";
 import { detectProjectName } from "./init.js";
 import { header, step, info, success, error, c } from "../lib/log.js";
 export async function projectRegister(opts = {}) {
-    const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+    const configRoot = opts.configRoot ?? resolveConfigRoot();
     const config = await loadConfig(configRoot);
     if (!config.project) {
         error("No 'project' section found in .wtenv.config.js");
@@ -112,7 +112,7 @@ export function projectInit(options = {}) {
     console.log("  2. Run wtenv project register to register the project's static domains");
 }
 export async function projectDeregister(opts = {}) {
-    const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+    const configRoot = opts.configRoot ?? resolveConfigRoot();
     const config = await loadConfig(configRoot);
     if (!config.project) {
         error("No 'project' section found in .wtenv.config.js");

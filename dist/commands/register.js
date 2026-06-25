@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { loadConfig } from "../lib/config.js";
-import { worktreeRoot, gitRoot, worktreeId } from "../lib/git.js";
+import { worktreeRoot, resolveConfigRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
 import { header, step, info, success, error, warn, c } from "../lib/log.js";
 function shortName(pluginName) {
@@ -9,7 +9,7 @@ function shortName(pluginName) {
 }
 export async function register(name, opts = {}) {
     const cwd = opts.cwd ?? worktreeRoot() ?? process.cwd();
-    const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
+    const configRoot = opts.configRoot ?? resolveConfigRoot(cwd);
     const id = worktreeId(cwd);
     if (!id) {
         throw new Error(`Could not determine git-dir for ${cwd} — run inside a git worktree.`);

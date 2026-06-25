@@ -1,6 +1,6 @@
 import { loadConfig } from "../lib/config.js";
 import { getWorktree, getWorktreePorts } from "../lib/registry.js";
-import { gitRoot, worktreeId, worktreeRoot } from "../lib/git.js";
+import { resolveConfigRoot, worktreeId, worktreeRoot } from "../lib/git.js";
 import { header, info, c } from "../lib/log.js";
 export async function current(options = {}) {
     const cwd = options.cwd ?? worktreeRoot() ?? process.cwd();
@@ -12,7 +12,7 @@ export async function current(options = {}) {
     if (!wt) {
         throw new Error(`No registered worktree found at '${cwd}'. Run wtenv register first.`);
     }
-    const configRoot = options.configRoot ?? gitRoot(cwd) ?? cwd;
+    const configRoot = options.configRoot ?? resolveConfigRoot(cwd);
     const config = await loadConfig(configRoot);
     const ports = getWorktreePorts(id);
     const domain = `${wt.slug}.${config.tld}`;

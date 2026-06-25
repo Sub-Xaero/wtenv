@@ -1,5 +1,12 @@
 import { execSync } from "node:child_process";
-import { resolve, dirname } from "node:path";
+import { existsSync } from "node:fs";
+import { join, resolve, dirname } from "node:path";
+
+const CONFIG_FILES = [".wtenv.config.js", ".wtenv.json"];
+
+function hasConfig(dir: string | null): dir is string {
+  return dir != null && CONFIG_FILES.some((f) => existsSync(join(dir, f)));
+}
 
 // Root of the current git worktree (linked or main)
 export function worktreeRoot(cwd = process.cwd()): string | null {
@@ -21,6 +28,16 @@ export function gitRoot(cwd = process.cwd()): string | null {
   } catch {
     return null;
   }
+}
+
+// Directory to load .wtenv.config.js from. The current worktree's own config
+// wins so per-worktree configs take effect; gitRoot (the main checkout) is only
+// a fallback for worktrees that don't carry their own config — e.g. when it's
+// gitignored and lives only in the main checkout. Finally fall back to cwd.
+export function resolveConfigRoot(cwd = process.cwd()): string {
+  const local = worktreeRoot(cwd);
+  if (hasConfig(local)) return local;
+  return gitRoot(cwd) ?? local ?? cwd;
 }
 
 // Stable identifier for a worktree. For the main checkout it's `<repo>/.git`;

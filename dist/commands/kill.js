@@ -1,6 +1,6 @@
 import { loadConfig } from "../lib/config.js";
 import { getWorktree, getWorktreePorts } from "../lib/registry.js";
-import { gitRoot, worktreeId, worktreeRoot } from "../lib/git.js";
+import { resolveConfigRoot, worktreeId, worktreeRoot } from "../lib/git.js";
 import { header, info, success, warn, error, c } from "../lib/log.js";
 import { listenersOn, processNames } from "../lib/process.js";
 function gather(portsByLabel) {
@@ -48,7 +48,7 @@ export async function kill(opts = {}) {
         error(`No registered worktree found at '${cwd}'. Run wtenv register first.`);
         process.exit(1);
     }
-    const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
+    const configRoot = opts.configRoot ?? resolveConfigRoot(cwd);
     const config = await loadConfig(configRoot);
     const ports = getWorktreePorts(id);
     const portSummary = Object.entries(ports)
@@ -75,7 +75,7 @@ export async function kill(opts = {}) {
     success(`Killed ${killed} process${killed === 1 ? "" : "es"} (${opts.force ? "SIGKILL" : "SIGTERM"})`);
 }
 export async function projectKill(opts = {}) {
-    const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+    const configRoot = opts.configRoot ?? resolveConfigRoot();
     const config = await loadConfig(configRoot);
     if (!config.project) {
         error("No 'project' section found in .wtenv.config.js");

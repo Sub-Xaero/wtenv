@@ -1,6 +1,6 @@
 import { listWorktrees } from "../lib/registry.js";
 import { loadConfig } from "../lib/config.js";
-import { gitRoot } from "../lib/git.js";
+import { resolveConfigRoot } from "../lib/git.js";
 import { header, step, info, c } from "../lib/log.js";
 export async function list(options = {}) {
     const worktrees = listWorktrees();
@@ -28,7 +28,7 @@ export async function list(options = {}) {
     };
     const rows = [];
     for (const wt of worktrees) {
-        const configRoot = gitRoot(wt.project_root) ?? wt.project_root;
+        const configRoot = resolveConfigRoot(wt.project_root);
         const config = await loadCachedConfig(configRoot);
         const tld = config?.tld ?? "test";
         const services = Object.fromEntries(Object.entries(wt.ports).map(([service, port]) => {
