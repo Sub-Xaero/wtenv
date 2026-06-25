@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { loadConfig } from "../lib/config.js";
 import { getWorktree } from "../lib/registry.js";
-import { gitRoot, worktreeId, worktreeRoot } from "../lib/git.js";
+import { resolveConfigRoot, worktreeId, worktreeRoot } from "../lib/git.js";
 import { header, error } from "../lib/log.js";
 // In --print mode, emit just the URL so it can be piped/captured.
 // Otherwise announce what we're opening, then fork `open` and unref so the CLI
@@ -16,7 +16,7 @@ function launch(url, print) {
 }
 export async function open(arg, opts = {}) {
     const cwd = opts.cwd ?? worktreeRoot() ?? process.cwd();
-    const configRoot = opts.configRoot ?? gitRoot(cwd) ?? cwd;
+    const configRoot = opts.configRoot ?? resolveConfigRoot(cwd);
     const id = worktreeId(cwd);
     if (!id) {
         throw new Error(`Could not determine git-dir for ${cwd} — run inside a git worktree.`);
@@ -48,7 +48,7 @@ export async function open(arg, opts = {}) {
     launch(`https://${host}`, opts.print ?? false);
 }
 export async function projectOpen(arg, opts = {}) {
-    const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+    const configRoot = opts.configRoot ?? resolveConfigRoot();
     const config = await loadConfig(configRoot);
     if (!config.project) {
         error("No project config found in .wtenv.config.js");

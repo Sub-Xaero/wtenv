@@ -5,7 +5,7 @@ import { registerProjectDnsmasq, deregisterProjectDnsmasq } from "../lib/dnsmasq
 import { registerProjectCaddy, deregisterProjectCaddy } from "../lib/caddy.js";
 import { deregisterHostsEntries } from "../lib/hosts.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "../lib/mdns.js";
-import { gitRoot } from "../lib/git.js";
+import { resolveConfigRoot } from "../lib/git.js";
 import { detectProjectName } from "./init.js";
 import { header, step, info, success, error, c } from "../lib/log.js";
 
@@ -14,7 +14,7 @@ interface ProjectOptions {
 }
 
 export async function projectRegister(opts: ProjectOptions = {}): Promise<void> {
-  const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+  const configRoot = opts.configRoot ?? resolveConfigRoot();
   const config = await loadConfig(configRoot);
 
   if (!config.project) {
@@ -131,7 +131,7 @@ export function projectInit(options: { force?: boolean; cwd?: string } = {}): vo
 }
 
 export async function projectDeregister(opts: ProjectOptions = {}): Promise<void> {
-  const configRoot = opts.configRoot ?? gitRoot() ?? process.cwd();
+  const configRoot = opts.configRoot ?? resolveConfigRoot();
   const config = await loadConfig(configRoot);
 
   if (!config.project) {

@@ -1,6 +1,6 @@
 import { listWorktrees } from "../lib/registry.js";
 import { loadConfig } from "../lib/config.js";
-import { gitRoot } from "../lib/git.js";
+import { resolveConfigRoot } from "../lib/git.js";
 import { hasDnsmasqConf, listDnsmasqConfNames } from "../lib/dnsmasq.js";
 import { hasCaddyRoutes } from "../lib/caddy.js";
 import { listenersOn, processNames } from "../lib/process.js";
@@ -32,7 +32,7 @@ export async function ps(): Promise<void> {
   const registeredSlugs = new Set(worktrees.map((wt) => wt.slug));
 
   for (const wt of worktrees) {
-    const configRoot = gitRoot(wt.project_root) ?? wt.project_root;
+    const configRoot = resolveConfigRoot(wt.project_root);
     const config = await loadCachedConfig(configRoot);
     const tld = config?.tld ?? "test";
 
