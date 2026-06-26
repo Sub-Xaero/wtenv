@@ -1,6 +1,6 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { parseEnv } from "node:util";
 import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
 import { registerCaddy, deregisterCaddy } from "./caddy.js";
@@ -9,6 +9,7 @@ import { provisionDatabase, teardownDatabase } from "./database.js";
 import { provisionRedis, teardownRedis } from "./redis.js";
 import { allocateWorktree, releaseWorktree, allocateRedisDb, releaseRedisDb, getRedisDb } from "./registry.js";
 import { info, cmd, warn } from "./log.js";
+import { executePlan } from "./plan.js";
 // Allocates the worktree's registry row, including a checked-out animal name
 // (the slug) from the bundled pool and per-service ports. Also seeds `ctx.slug`
 // and exports `WTENV_SLUG` (the bare label) plus `WTENV_DOMAIN` (slug.tld) so
@@ -213,11 +214,11 @@ export function copyFiles(options) {
 export function shell(options) {
     return {
         name: options.label ? `wtenv:shell:${options.label}` : "wtenv:shell",
-        onRegister(ctx) {
-            runCommands(options.onRegister ?? [], ctx);
+        async onRegister(ctx) {
+            await runCommands(options.onRegister ?? [], ctx);
         },
-        onDeregister(ctx) {
-            runCommands(options.onDeregister ?? [], ctx);
+        async onDeregister(ctx) {
+            await runCommands(options.onDeregister ?? [], ctx);
         },
     };
 }
@@ -240,15 +241,24 @@ function composeWorktreeEnv(ctx) {
     Object.assign(env, ctx.envVars);
     return env;
 }
-function runCommands(commands, ctx) {
+async function runCommands(commands, ctx) {
     const env = composeWorktreeEnv(ctx);
-    for (const command of commands) {
-        cmd(command);
-        const result = spawnSync(command, { shell: true, stdio: "inherit", cwd: ctx.cwd, env });
-        if (result.status !== 0) {
-            throw new Error(`shell: command failed (exit ${result.status ?? "?"}): ${command}`);
-        }
-    }
+    await executePlan(commands, (command) => runCommand(command, ctx, env));
+}
+function runCommand(command, ctx, env) {
+    cmd(command);
+    return new Promise((resolve, reject) => {
+        const child = spawn(command, { shell: true, stdio: "inherit", cwd: ctx.cwd, env });
+        child.on("error", reject);
+        child.on("exit", (code, signal) => {
+            if (code === 0) {
+                resolve();
+                return;
+            }
+            const status = code === null ? `signal ${signal ?? "?"}` : `exit ${code}`;
+            reject(new Error(`shell: command failed (${status}): ${command}`));
+        });
+    });
 }
 export function direnv(options = {}) {
     const envFile = options.envFile ?? ".env.worktree";
@@ -275,12 +285,12 @@ export function direnv(options = {}) {
 export function postgres(options) {
     return {
         name: "wtenv:postgres",
-        onRegister(ctx) {
-            const dbUrl = provisionDatabase(ctx.slug, options);
+        async onRegister(ctx) {
+            const dbUrl = await provisionDatabase(ctx.slug, options);
             ctx.envVars[options.envVar] = dbUrl;
         },
-        onDeregister(ctx) {
-            teardownDatabase(ctx.slug, options);
+        async onDeregister(ctx) {
+            await teardownDatabase(ctx.slug, options);
         },
     };
 }

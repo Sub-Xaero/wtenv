@@ -14,7 +14,7 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "link": "npm run build && npm link",
-    "test": "npm run build && node --test test/*.test.mjs"
+    "test": "npm run build && node --test test/*.test.mjs && node --import tsx --test \"tests/**/*.test.ts\""
   },
   "engines": {
     "node": ">=24.0.0"

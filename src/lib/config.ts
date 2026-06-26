@@ -3,6 +3,7 @@ import { register } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defaultPlugins, postgres } from "./plugins.js";
+import type { PlanInput } from "./plan.js";
 
 let wtenvResolverRegistered = false;
 
@@ -50,6 +51,8 @@ export interface Plugin {
   onDeregister?(ctx: PluginContext): Promise<void> | void;
 }
 
+export type PluginPlan = PlanInput<Plugin>;
+
 export interface PluginContext {
   worktreeId: string;     // stable identifier (worktree git-dir absolute path)
   worktreeName: string;   // display name (cwd basename — may change if the directory is renamed)
@@ -70,7 +73,7 @@ export interface WtenvConfig {
   // Value is the subdomain prefix — e.g. { pro: "pro-company.dev" } makes
   // `wtenv open pro` → https://pro-company.dev.<domain>.<tld>.
   aliases?: Record<string, string>;
-  plugins: Plugin[];
+  plugins: PluginPlan;
 }
 
 const DEFAULTS = {
@@ -81,7 +84,7 @@ const DEFAULTS = {
 };
 
 export function defineConfig(
-  config: Omit<WtenvConfig, "plugins"> & { plugins?: Plugin[] }
+  config: Omit<WtenvConfig, "plugins"> & { plugins?: PluginPlan }
 ): WtenvConfig {
   return { ...config, plugins: config.plugins ?? [] };
 }
@@ -112,7 +115,7 @@ function normalizeConfig(
   raw: Partial<WtenvConfig> & { portRange?: [number, number]; database?: DatabaseConfig },
   fromJson: boolean
 ): WtenvConfig {
-  let plugins: Plugin[];
+  let plugins: PluginPlan;
 
   if (fromJson) {
     // JSON/default configs get the infrastructure plugins injected automatically.

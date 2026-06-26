@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { loadConfig } from "../lib/config.js";
+import { executePlan, flattenPlan, invertPlan, PlanExecutionError, sequence } from "../lib/plan.js";
 import { worktreeRoot, resolveConfigRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
 import { header, step, info, success, error, warn, c } from "../lib/log.js";
@@ -16,7 +17,8 @@ export async function register(name, opts = {}) {
     }
     const worktreeName = name ?? basename(cwd);
     const config = await loadConfig(configRoot);
-    const portsPlugin = config.plugins.find((p) => p.name === "wtenv:ports");
+    const plugins = flattenPlan(config.plugins);
+    const portsPlugin = plugins.find((p) => p.name === "wtenv:ports");
     if (opts.slug && portsPlugin)
         portsPlugin.slugHint = opts.slug;
     if (opts.dryRun) {
@@ -42,7 +44,7 @@ export async function register(name, opts = {}) {
         }
         console.log();
         step("plugins");
-        info(config.plugins.map((p) => shortName(p.name)).join(", "));
+        info(plugins.map((p) => shortName(p.name)).join(", "));
         return;
     }
     const envVars = {};
@@ -62,24 +64,27 @@ export async function register(name, opts = {}) {
     console.log(`    ${c.dim("cwd:")}    ${cwd}`);
     console.log(`    ${c.dim("config:")} ${configRoot}`);
     console.log();
-    const completed = [];
+    let completed = sequence([]);
     try {
-        for (let i = 0; i < config.plugins.length; i++) {
-            const plugin = config.plugins[i];
+        completed = await executePlan(config.plugins, async (plugin) => {
+            if (!plugin.onRegister)
+                return false;
             step(shortName(plugin.name));
-            await plugin.onRegister?.(ctx);
-            completed.push(i);
+            await plugin.onRegister(ctx);
             console.log();
-        }
+        });
     }
     catch (err) {
+        const completedPlan = err instanceof PlanExecutionError ? err.completed : completed;
         error("Plugin failed — rolling back...");
-        for (const i of [...completed].reverse()) {
+        await executePlan(invertPlan(completedPlan), async (plugin) => {
+            if (!plugin.onDeregister)
+                return false;
             try {
-                await config.plugins[i].onDeregister?.(ctx);
+                await plugin.onDeregister(ctx);
             }
             catch { }
-        }
+        });
         throw err;
     }
     const envFilePath = join(cwd, opts.envFile ?? ".env.worktree");

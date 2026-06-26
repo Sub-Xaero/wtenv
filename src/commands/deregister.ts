@@ -2,6 +2,7 @@ import { unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../lib/config.js";
 import type { PluginContext } from "../lib/config.js";
+import { executePlan, invertPlan } from "../lib/plan.js";
 import { getWorktree, getWorktreePorts, getWorktreeBySlug, listWorktrees } from "../lib/registry.js";
 import { worktreeRoot, resolveConfigRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
@@ -67,12 +68,12 @@ export async function deregister(
   header(`Deregistering '${worktreeName}' (${wt.slug}.${config.tld})`);
   console.log();
 
-  for (const plugin of [...config.plugins].reverse()) {
-    if (!plugin.onDeregister) continue;
+  await executePlan(invertPlan(config.plugins), async (plugin) => {
+    if (!plugin.onDeregister) return false;
     step(shortName(plugin.name));
     await plugin.onDeregister(ctx);
     console.log();
-  }
+  });
 
   const envFilePath = join(cwd, opts.envFile ?? ".env.worktree");
   if (existsSync(envFilePath)) {
