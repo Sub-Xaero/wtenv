@@ -1,4 +1,5 @@
 import type { Plugin, DatabaseConfig } from "./config.js";
+import type { PlanInput } from "./plan.js";
 export interface PortsPlugin extends Plugin {
     portRange: [number, number];
     slugHint?: string;
@@ -25,8 +26,8 @@ export interface CopyFilesOptions {
 }
 export declare function copyFiles(options: CopyFilesOptions): Plugin;
 export interface ShellOptions {
-    onRegister?: string[];
-    onDeregister?: string[];
+    onRegister?: PlanInput<string>;
+    onDeregister?: PlanInput<string>;
     label?: string;
 }
 export declare function shell(options: ShellOptions): Plugin;

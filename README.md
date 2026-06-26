@@ -63,7 +63,7 @@ Installs and configures dnsmasq (listening on port 5300 so it doesn't need root)
 Create a `.wtenv.config.js` at your git root (the main checkout, not inside a worktree):
 
 ```js
-import { defineConfig, defaultPlugins, copyFiles, shell, postgres } from 'wtenv';
+import { defineConfig, defaultPlugins, copyFiles, shell, postgres, parallel, sequence } from 'wtenv';
 
 export default defineConfig({
   tld: 'test',
@@ -88,7 +88,10 @@ export default defineConfig({
       envVar: 'DATABASE_URL',
     }),
     shell({
-      onRegister: ['bundle install', 'bundle exec rails db:migrate'],
+      onRegister: sequence([
+        parallel(['bundle install', 'yarn install']),
+        'bundle exec rails db:migrate',
+      ]),
     }),
   ],
 });
@@ -108,7 +111,7 @@ wtenv auto-detects everything from git — no flags needed:
 | `services` | `{ web: { hostname: "*" } }` | Services to allocate ports for |
 | `aliases` | — | URL shortcuts for `wtenv open` / `wtenv project open` (no ports, no Caddy routes — just a subdomain prefix lookup). See [Aliases](#aliases) |
 | `project` | — | Static project domain config (see [Project domains](#project-domains)) |
-| `plugins` | `[]` | Plugin pipeline — runs in order on register, reverse on deregister |
+| `plugins` | `[]` | Plugin pipeline — runs in order on register, reverse on deregister. Use `parallel([...])` and `sequence([...])` to declare safe concurrency |
 
 ### Service config
 
@@ -289,7 +292,34 @@ interface PluginContext {
 }
 ```
 
-Plugins run **in order** on register and **in reverse** on deregister (stack discipline). If a plugin fails during register, all completed plugins have their `onDeregister` called as rollback before the error is re-thrown.
+Plugins run **in order** on register and **in reverse** on deregister (stack discipline). If a plugin fails during register, all completed plugin hooks have their `onDeregister` called as rollback before the error is re-thrown.
+
+### Execution groups
+
+Plain plugin arrays are serial, so existing configs keep the same behavior. To run independent work at the same time, wrap plugins or shell command strings in `parallel([...])`. Use `sequence([...])` when a grouped plan needs an explicit dependency boundary.
+
+```js
+import { defineConfig, ports, dns, caddy, serviceEnv, shell, parallel, sequence } from 'wtenv';
+
+export default defineConfig({
+  plugins: sequence([
+    ports(),
+    parallel([dns(), caddy(), serviceEnv()]),
+    shell({
+      onRegister: sequence([
+        parallel(['bundle install', 'yarn install']),
+        'bundle exec rails db:migrate',
+      ]),
+      onDeregister: parallel([
+        'rm -rf tmp/cache',
+        'rm -rf node_modules/.cache',
+      ]),
+    }),
+  ]),
+});
+```
+
+On deregister and rollback, sequence groups run in reverse dependency order while parallel groups stay parallel. If one member of a parallel group fails, wtenv waits for the rest of that already-started group to finish before reporting the failure. Only put items in the same `parallel()` group when they do not depend on each other's `ctx` mutations, files, registry state, or external services.
 
 ### Built-in plugins
 
@@ -357,7 +387,7 @@ Entry options: `src` (required), `dest` (defaults to `src`), `optional` (skip if
 
 With `symlink: true`, the entry is symlinked (`dest` → `src` in the main checkout) rather than copied — use it for shared, mutable directories that should stay in sync across worktrees, like Active Storage's `storage/`. Symlinks are left untouched if `dest` already exists (a real file/dir or a prior link), and are removed on deregister — but only if `dest` is still a symlink, so real data that replaced one is never deleted. Copied (non-symlink) files are left in place on deregister.
 
-Plugins run in array order on register (reverse order on deregister), so you can interleave multiple `copyFiles` and `shell` calls to control sequencing. Pass `label` to either to distinguish instances in the step log — e.g. `copyFiles({ label: 'storage', files: [...] })` shows as `copy-files:storage`.
+Plugins run in array order on register (reverse order on deregister), unless you explicitly group independent plugins with `parallel([...])`. You can interleave multiple `copyFiles` and `shell` calls to control sequencing. Pass `label` to either to distinguish instances in the step log — e.g. `copyFiles({ label: 'storage', files: [...] })` shows as `copy-files:storage`.
 
 #### `postgres(options)`
 
@@ -400,8 +430,11 @@ Runs shell commands on register and/or deregister. Commands run with `{ ...proce
 
 ```js
 shell({
-  onRegister:   ['bundle install', 'yarn install', 'bundle exec rails db:migrate'],
-  onDeregister: ['bundle exec rails db:drop'],  // optional
+  onRegister: sequence([
+    parallel(['bundle install', 'yarn install']),
+    'bundle exec rails db:migrate',
+  ]),
+  onDeregister: ['bundle exec rails db:drop'],  // optional; plain arrays stay serial
 })
 ```
 
@@ -511,9 +544,11 @@ Exits with code 1 if any check fails, 0 if all checks are pass or warn. Useful a
 
 ## How it works
 
-Port assignments and worktree metadata are stored in a SQLite registry at `~/.wtenv/registry.db`. On `register`, wtenv runs the plugin pipeline in order: ports are allocated from the registry, dnsmasq conf files are written to `/opt/homebrew/etc/dnsmasq.d/`, reverse-proxy routes are pushed to Caddy via its admin API (`localhost:2019`), any database is provisioned, and all accumulated env vars are written to `.env.worktree`. On `deregister`, the pipeline runs in reverse.
+Port assignments and worktree metadata are stored in a SQLite registry at `~/.wtenv/registry.db`. On `register`, wtenv runs the plugin pipeline in declared dependency order: ports are allocated from the registry, dnsmasq conf files are written to `/opt/homebrew/etc/dnsmasq.d/`, reverse-proxy routes are pushed to Caddy via its admin API (`localhost:2019`), any database is provisioned, and all accumulated env vars are written to `.env.worktree`. Explicit `parallel([...])` groups run concurrently. On `deregister`, the pipeline runs in reverse dependency order, with parallel groups still parallel.
 
 `register` and `deregister` print a coloured plugin-by-plugin trace so wtenv's own output is visually distinct from subprocess output (bundle/yarn/rails). Set `NO_COLOR=1` (or pipe to a non-TTY) to get plain text.
+
+When plugins or shell commands run in parallel, wtenv buffers each task's output and prints it after that task completes, so concurrent hooks do not interleave their logs.
 
 ## Backwards compatibility
 

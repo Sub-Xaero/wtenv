@@ -1,8 +1,8 @@
-import { spawnSync, execSync } from "node:child_process";
-import { existsSync, unlinkSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { closeSync, existsSync, openSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { info, warn, c } from "./log.js";
+import { info, warn } from "./log.js";
 function sanitizeName(name) {
     return name.replace(/-/g, "_");
 }
@@ -16,28 +16,75 @@ function databaseUrl(config, dbName) {
 function pgEnv(config) {
     return { ...process.env, PGPASSWORD: config.password };
 }
-export function provisionDatabase(slug, config) {
+function errorText(err) {
+    if (err instanceof Error)
+        return err.message;
+    return String(err);
+}
+function runProcess(command, args, options) {
+    return new Promise((resolve, reject) => {
+        let stderr = "";
+        const child = spawn(command, args, {
+            env: options.env,
+            stdio: ["ignore", options.stdout ?? "ignore", "pipe"],
+        });
+        child.stderr?.on("data", (chunk) => {
+            stderr += chunk.toString();
+        });
+        child.on("error", reject);
+        child.on("close", (code, signal) => {
+            if (code === 0) {
+                resolve();
+                return;
+            }
+            const status = code === null ? `signal ${signal ?? "?"}` : `exit ${code}`;
+            reject(new Error((stderr.trim() || status).trim()));
+        });
+    });
+}
+export async function provisionDatabase(slug, config) {
     const dbName = databaseName(config, slug);
     const env = pgEnv(config);
-    const createResult = spawnSync("createdb", ["-h", config.host, "-p", String(config.port), "-U", config.username, dbName], { stdio: "pipe", env });
-    if (createResult.status !== 0) {
-        const stderr = createResult.stderr?.toString() ?? "";
-        if (stderr.includes("already exists")) {
+    try {
+        await runProcess("createdb", ["-h", config.host, "-p", String(config.port), "-U", config.username, dbName], {
+            env,
+        });
+    }
+    catch (err) {
+        const message = errorText(err);
+        if (message.includes("already exists")) {
             info(`database '${dbName}' already exists — skipping`);
             return databaseUrl(config, dbName);
         }
-        throw new Error(`createdb failed: ${stderr.trim()}`);
+        throw new Error(`createdb failed: ${message}`);
     }
     if (config.forkFrom) {
         const dumpFile = join(tmpdir(), `wtenv-${dbName}.dump`);
+        let dumpFd = null;
         try {
-            // Mirror the info() prefix exactly so the trailing "done" lands on the same indented line.
-            process.stdout.write(`    ${c.dim("→")} forking '${config.forkFrom}' → '${dbName}' ... `);
-            execSync(`pg_dump -Fc -h ${config.host} -p ${config.port} -U ${config.username} ${config.forkFrom} > ${dumpFile}`, { env, stdio: "pipe" });
-            execSync(`pg_restore -h ${config.host} -p ${config.port} -U ${config.username} -d ${dbName} --no-owner --no-privileges ${dumpFile}`, { env, stdio: "pipe" });
-            process.stdout.write("done\n");
+            info(`forking '${config.forkFrom}' → '${dbName}'`);
+            dumpFd = openSync(dumpFile, "w");
+            await runProcess("pg_dump", ["-Fc", "-h", config.host, "-p", String(config.port), "-U", config.username, config.forkFrom], { env, stdout: dumpFd });
+            closeSync(dumpFd);
+            dumpFd = null;
+            await runProcess("pg_restore", [
+                "-h",
+                config.host,
+                "-p",
+                String(config.port),
+                "-U",
+                config.username,
+                "-d",
+                dbName,
+                "--no-owner",
+                "--no-privileges",
+                dumpFile,
+            ], { env });
+            info(`forked '${config.forkFrom}' → '${dbName}'`);
         }
         finally {
+            if (dumpFd !== null)
+                closeSync(dumpFd);
             if (existsSync(dumpFile))
                 unlinkSync(dumpFile);
         }
@@ -47,15 +94,14 @@ export function provisionDatabase(slug, config) {
     }
     return databaseUrl(config, dbName);
 }
-export function teardownDatabase(slug, config) {
+export async function teardownDatabase(slug, config) {
     const dbName = databaseName(config, slug);
-    const result = spawnSync("dropdb", ["-h", config.host, "-p", String(config.port), "-U", config.username, "--if-exists", dbName], { stdio: "pipe", env: pgEnv(config) });
-    if (result.status !== 0) {
-        const stderr = result.stderr?.toString() ?? "";
-        warn(`dropdb: ${stderr.trim()}`);
-    }
-    else {
+    try {
+        await runProcess("dropdb", ["-h", config.host, "-p", String(config.port), "-U", config.username, "--if-exists", dbName], { env: pgEnv(config) });
         info(`dropped database '${dbName}'`);
+    }
+    catch (err) {
+        warn(`dropdb: ${errorText(err)}`);
     }
 }
 export function buildDatabaseUrl(slug, config) {

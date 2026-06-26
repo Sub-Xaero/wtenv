@@ -1,3 +1,4 @@
+import type { PlanInput } from "./plan.js";
 export interface ServiceConfig {
     hostname: string | false;
     env?: Record<string, string>;
@@ -25,6 +26,7 @@ export interface Plugin {
     onRegister?(ctx: PluginContext): Promise<void> | void;
     onDeregister?(ctx: PluginContext): Promise<void> | void;
 }
+export type PluginPlan = PlanInput<Plugin>;
 export interface PluginContext {
     worktreeId: string;
     worktreeName: string;
@@ -41,9 +43,9 @@ export interface WtenvConfig {
     database?: DatabaseConfig;
     services: Record<string, ServiceConfig>;
     aliases?: Record<string, string>;
-    plugins: Plugin[];
+    plugins: PluginPlan;
 }
 export declare function defineConfig(config: Omit<WtenvConfig, "plugins"> & {
-    plugins?: Plugin[];
+    plugins?: PluginPlan;
 }): WtenvConfig;
 export declare function loadConfig(configRoot?: string): Promise<WtenvConfig>;

@@ -1,6 +1,6 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { parseEnv } from "node:util";
 import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
 import { registerCaddy, deregisterCaddy } from "./caddy.js";
@@ -8,8 +8,10 @@ import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./md
 import { provisionDatabase, teardownDatabase } from "./database.js";
 import { provisionRedis, teardownRedis } from "./redis.js";
 import { allocateWorktree, releaseWorktree, allocateRedisDb, releaseRedisDb, getRedisDb } from "./registry.js";
-import { info, cmd, warn } from "./log.js";
+import { appendCapturedLog, captureLogs, flushCapturedLog, info, cmd, warn } from "./log.js";
+import { executePlan, isPlanGroup } from "./plan.js";
 import type { Plugin, PluginContext, DatabaseConfig } from "./config.js";
+import type { PlanInput } from "./plan.js";
 
 export interface PortsPlugin extends Plugin {
   portRange: [number, number];
@@ -255,8 +257,8 @@ export function copyFiles(options: CopyFilesOptions): Plugin {
 }
 
 export interface ShellOptions {
-  onRegister?: string[];
-  onDeregister?: string[];
+  onRegister?: PlanInput<string>;
+  onDeregister?: PlanInput<string>;
   // Distinguishes this instance in the register/deregister step log when a
   // config uses more than one shell(). Shown as `shell:<label>`.
   label?: string;
@@ -265,11 +267,11 @@ export interface ShellOptions {
 export function shell(options: ShellOptions): Plugin {
   return {
     name: options.label ? `wtenv:shell:${options.label}` : "wtenv:shell",
-    onRegister(ctx: PluginContext) {
-      runCommands(options.onRegister ?? [], ctx);
+    async onRegister(ctx: PluginContext) {
+      await runCommands(options.onRegister ?? [], ctx);
     },
-    onDeregister(ctx: PluginContext) {
-      runCommands(options.onDeregister ?? [], ctx);
+    async onDeregister(ctx: PluginContext) {
+      await runCommands(options.onDeregister ?? [], ctx);
     },
   };
 }
@@ -284,6 +286,12 @@ export const DOTENV_LAYERS = [".env", ".env.local"] as const;
 // process.env < .env < .env.local < ctx.envVars (wtenv-generated values win last).
 // ctx.envVars stands in for the `.env.worktree` layer, which isn't written to disk
 // until after all plugins finish.
+function containsPlanGroup<T>(plan: PlanInput<T>): boolean {
+  if (isPlanGroup(plan)) return true;
+  if (!Array.isArray(plan)) return false;
+  return plan.some((item) => isPlanGroup(item) && containsPlanGroup(item));
+}
+
 function composeWorktreeEnv(ctx: PluginContext): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const file of DOTENV_LAYERS) {
@@ -294,15 +302,49 @@ function composeWorktreeEnv(ctx: PluginContext): NodeJS.ProcessEnv {
   return env;
 }
 
-function runCommands(commands: string[], ctx: PluginContext): void {
+function runCommands(commands: PlanInput<string>, ctx: PluginContext): Promise<void> | void {
   const env = composeWorktreeEnv(ctx);
-  for (const command of commands) {
-    cmd(command);
-    const result = spawnSync(command, { shell: true, stdio: "inherit", cwd: ctx.cwd, env });
-    if (result.status !== 0) {
-      throw new Error(`shell: command failed (exit ${result.status ?? "?"}): ${command}`);
-    }
+
+  if (!containsPlanGroup(commands)) {
+    const commandList = (Array.isArray(commands) ? commands : [commands]) as string[];
+    for (const command of commandList) runCommandSync(command, ctx, env);
+    return;
   }
+
+  return executePlan(commands, async (command) => {
+    const captured = await captureLogs(() => runCommand(command, ctx, env));
+    flushCapturedLog(captured.output);
+    if (!captured.ok) throw captured.error;
+  }).then(() => undefined);
+}
+
+function runCommandSync(command: string, ctx: PluginContext, env: NodeJS.ProcessEnv): void {
+  cmd(command);
+  const result = spawnSync(command, { shell: true, stdio: "pipe", cwd: ctx.cwd, env });
+  if (result.stdout) appendCapturedLog(result.stdout.toString());
+  if (result.stderr) appendCapturedLog(result.stderr.toString(), "stderr");
+  if (result.status !== 0) {
+    throw new Error(`shell: command failed (exit ${result.status ?? "?"}): ${command}`);
+  }
+}
+
+function runCommand(command: string, ctx: PluginContext, env: NodeJS.ProcessEnv): Promise<void> {
+  cmd(command);
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, { shell: true, stdio: ["ignore", "pipe", "pipe"], cwd: ctx.cwd, env });
+
+    child.stdout?.on("data", (chunk) => appendCapturedLog(chunk.toString()));
+    child.stderr?.on("data", (chunk) => appendCapturedLog(chunk.toString(), "stderr"));
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const status = code === null ? `signal ${signal ?? "?"}` : `exit ${code}`;
+      reject(new Error(`shell: command failed (${status}): ${command}`));
+    });
+  });
 }
 
 export interface DirenvOptions {
@@ -335,12 +377,12 @@ export function direnv(options: DirenvOptions = {}): Plugin {
 export function postgres(options: DatabaseConfig): Plugin {
   return {
     name: "wtenv:postgres",
-    onRegister(ctx: PluginContext) {
-      const dbUrl = provisionDatabase(ctx.slug, options);
+    async onRegister(ctx: PluginContext) {
+      const dbUrl = await provisionDatabase(ctx.slug, options);
       ctx.envVars[options.envVar] = dbUrl;
     },
-    onDeregister(ctx: PluginContext) {
-      teardownDatabase(ctx.slug, options);
+    async onDeregister(ctx: PluginContext) {
+      await teardownDatabase(ctx.slug, options);
     },
   };
 }
