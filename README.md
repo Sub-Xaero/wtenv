@@ -548,6 +548,8 @@ Port assignments and worktree metadata are stored in a SQLite registry at `~/.wt
 
 `register` and `deregister` print a coloured plugin-by-plugin trace so wtenv's own output is visually distinct from subprocess output (bundle/yarn/rails). Set `NO_COLOR=1` (or pipe to a non-TTY) to get plain text.
 
+When plugins or shell commands run in parallel, wtenv buffers each task's output and prints it after that task completes, so concurrent hooks do not interleave their logs.
+
 ## Backwards compatibility
 
 Plain `.wtenv.json` files still work — `normalizeConfig` automatically injects `defaultPlugins()` and converts a `database` field to a `postgres()` plugin. The `portRange` field in `.wtenv.json` is passed through to the ports plugin. No changes needed to existing JSON configs.

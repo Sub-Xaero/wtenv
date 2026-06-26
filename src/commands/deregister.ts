@@ -6,7 +6,7 @@ import { executePlan, invertPlan } from "../lib/plan.js";
 import { getWorktree, getWorktreePorts, getWorktreeBySlug, listWorktrees } from "../lib/registry.js";
 import { worktreeRoot, resolveConfigRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
-import { header, step, info, success, error, warn } from "../lib/log.js";
+import { captureLogs, flushCapturedLog, header, step, info, success, error, warn } from "../lib/log.js";
 
 interface DeregisterOptions {
   cwd?: string;
@@ -70,9 +70,13 @@ export async function deregister(
 
   await executePlan(invertPlan(config.plugins), async (plugin) => {
     if (!plugin.onDeregister) return false;
-    step(shortName(plugin.name));
-    await plugin.onDeregister(ctx);
-    console.log();
+    const captured = await captureLogs(async () => {
+      step(shortName(plugin.name));
+      await plugin.onDeregister!(ctx);
+      console.log();
+    });
+    flushCapturedLog(captured.output);
+    if (!captured.ok) throw captured.error;
   });
 
   const envFilePath = join(cwd, opts.envFile ?? ".env.worktree");

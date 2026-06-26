@@ -6,7 +6,7 @@ import type { PortsPlugin } from "../lib/plugins.js";
 import { executePlan, flattenPlan, invertPlan, PlanExecutionError, sequence } from "../lib/plan.js";
 import { worktreeRoot, resolveConfigRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
-import { header, step, info, success, error, warn, c } from "../lib/log.js";
+import { captureLogs, flushCapturedLog, header, step, info, success, error, warn, c } from "../lib/log.js";
 
 interface RegisterOptions {
   cwd?: string;
@@ -88,9 +88,13 @@ export async function register(
   try {
     completed = await executePlan(config.plugins, async (plugin) => {
       if (!plugin.onRegister) return false;
-      step(shortName(plugin.name));
-      await plugin.onRegister(ctx);
-      console.log();
+      const captured = await captureLogs(async () => {
+        step(shortName(plugin.name));
+        await plugin.onRegister!(ctx);
+        console.log();
+      });
+      flushCapturedLog(captured.output);
+      if (!captured.ok) throw captured.error;
     });
   } catch (err) {
     const completedPlan = err instanceof PlanExecutionError ? err.completed : completed;
@@ -98,7 +102,8 @@ export async function register(
     await executePlan(invertPlan(completedPlan), async (plugin) => {
       if (!plugin.onDeregister) return false;
       try {
-        await plugin.onDeregister(ctx);
+        const captured = await captureLogs(() => plugin.onDeregister!(ctx));
+        flushCapturedLog(captured.output);
       } catch {}
     });
     throw err;

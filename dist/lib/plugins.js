@@ -1,6 +1,6 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { parseEnv } from "node:util";
 import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
 import { registerCaddy, deregisterCaddy } from "./caddy.js";
@@ -8,8 +8,8 @@ import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./md
 import { provisionDatabase, teardownDatabase } from "./database.js";
 import { provisionRedis, teardownRedis } from "./redis.js";
 import { allocateWorktree, releaseWorktree, allocateRedisDb, releaseRedisDb, getRedisDb } from "./registry.js";
-import { info, cmd, warn } from "./log.js";
-import { executePlan } from "./plan.js";
+import { appendCapturedLog, captureLogs, flushCapturedLog, info, cmd, warn } from "./log.js";
+import { executePlan, isPlanGroup } from "./plan.js";
 // Allocates the worktree's registry row, including a checked-out animal name
 // (the slug) from the bundled pool and per-service ports. Also seeds `ctx.slug`
 // and exports `WTENV_SLUG` (the bare label) plus `WTENV_DOMAIN` (slug.tld) so
@@ -231,6 +231,13 @@ export const DOTENV_LAYERS = [".env", ".env.local"];
 // process.env < .env < .env.local < ctx.envVars (wtenv-generated values win last).
 // ctx.envVars stands in for the `.env.worktree` layer, which isn't written to disk
 // until after all plugins finish.
+function containsPlanGroup(plan) {
+    if (isPlanGroup(plan))
+        return true;
+    if (!Array.isArray(plan))
+        return false;
+    return plan.some((item) => isPlanGroup(item) && containsPlanGroup(item));
+}
 function composeWorktreeEnv(ctx) {
     const env = { ...process.env };
     for (const file of DOTENV_LAYERS) {
@@ -241,16 +248,40 @@ function composeWorktreeEnv(ctx) {
     Object.assign(env, ctx.envVars);
     return env;
 }
-async function runCommands(commands, ctx) {
+function runCommands(commands, ctx) {
     const env = composeWorktreeEnv(ctx);
-    await executePlan(commands, (command) => runCommand(command, ctx, env));
+    if (!containsPlanGroup(commands)) {
+        const commandList = (Array.isArray(commands) ? commands : [commands]);
+        for (const command of commandList)
+            runCommandSync(command, ctx, env);
+        return;
+    }
+    return executePlan(commands, async (command) => {
+        const captured = await captureLogs(() => runCommand(command, ctx, env));
+        flushCapturedLog(captured.output);
+        if (!captured.ok)
+            throw captured.error;
+    }).then(() => undefined);
+}
+function runCommandSync(command, ctx, env) {
+    cmd(command);
+    const result = spawnSync(command, { shell: true, stdio: "pipe", cwd: ctx.cwd, env });
+    if (result.stdout)
+        appendCapturedLog(result.stdout.toString());
+    if (result.stderr)
+        appendCapturedLog(result.stderr.toString(), "stderr");
+    if (result.status !== 0) {
+        throw new Error(`shell: command failed (exit ${result.status ?? "?"}): ${command}`);
+    }
 }
 function runCommand(command, ctx, env) {
     cmd(command);
     return new Promise((resolve, reject) => {
-        const child = spawn(command, { shell: true, stdio: "inherit", cwd: ctx.cwd, env });
+        const child = spawn(command, { shell: true, stdio: ["ignore", "pipe", "pipe"], cwd: ctx.cwd, env });
+        child.stdout?.on("data", (chunk) => appendCapturedLog(chunk.toString()));
+        child.stderr?.on("data", (chunk) => appendCapturedLog(chunk.toString(), "stderr"));
         child.on("error", reject);
-        child.on("exit", (code, signal) => {
+        child.on("close", (code, signal) => {
             if (code === 0) {
                 resolve();
                 return;

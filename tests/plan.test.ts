@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { PluginContext } from "../src/lib/config.js";
+import { captureLogs } from "../src/lib/log.js";
 import { shell } from "../src/lib/plugins.js";
 import {
   executePlan,
@@ -118,6 +119,44 @@ test("shell accepts grouped command plans", async () => {
     await plugin.onRegister?.(ctx);
     assert.equal([...readFileSync(out, "utf8")].sort().join(""), "ab");
     assert.ok(Date.now() - started < 550);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("shell buffers parallel command output by command", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "wtenv-shell-logs-"));
+  const plugin = shell({
+    onRegister: parallel([
+      `node -e "process.stdout.write('a1\\\\n'); setTimeout(() => process.stdout.write('a2\\\\n'), 80)"`,
+      `node -e "process.stdout.write('b1\\\\n'); setTimeout(() => process.stdout.write('b2\\\\n'), 20)"`,
+    ]),
+  });
+  const ctx: PluginContext = {
+    worktreeId: "id",
+    worktreeName: "worktree",
+    slug: "slug",
+    cwd,
+    configRoot: cwd,
+    ports: {},
+    envVars: {},
+    config: { tld: "test", services: {} },
+  };
+
+  try {
+    const captured = await captureLogs(() => plugin.onRegister?.(ctx));
+    if (!captured.ok) assert.fail(`expected shell command to pass: ${captured.error}`);
+    const output = captured.output;
+    const a1 = output.indexOf("a1\n");
+    const a2 = output.indexOf("a2\n");
+    const b1 = output.indexOf("b1\n");
+    const b2 = output.indexOf("b2\n");
+
+    assert.ok(a1 !== -1 && a2 !== -1 && b1 !== -1 && b2 !== -1);
+    assert.ok(a1 < a2);
+    assert.ok(b1 < b2);
+    assert.equal(a1 < b1 && b1 < a2, false);
+    assert.equal(b1 < a1 && a1 < b2, false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
