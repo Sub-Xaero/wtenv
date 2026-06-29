@@ -11,7 +11,7 @@ const { current } = await import("../dist/commands/current.js");
 const { list } = await import("../dist/commands/list.js");
 const { open, projectOpen } = await import("../dist/commands/open.js");
 const { worktreeId } = await import("../dist/lib/git.js");
-const { allocateWorktree } = await import("../dist/lib/registry.js");
+const { allocateWorktree, registerProjectRegistration } = await import("../dist/lib/registry.js");
 
 function tempDir(prefix = "wtenv-commands-") {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -137,9 +137,21 @@ test("projectOpen --print resolves project root and aliases from config", async 
 });
 
 test("list --json includes registered worktrees with service URLs", async () => {
+  const configRoot = tempDir("wtenv-list-project-");
+  registerProjectRegistration(
+    "acme",
+    configRoot,
+    "acme.test",
+    [
+      { hostname: "acme.test", port: 5200 },
+      { hostname: "api.acme.test", port: 5201 },
+    ],
+  );
+
   const output = await captureStdout(() => list({ json: true }));
   const payload = JSON.parse(output);
   const bySlug = new Map(payload.worktrees.map((worktree) => [worktree.slug, worktree]));
+  const byProject = new Map(payload.projects.map((project) => [project.name, project]));
 
   assert.equal(bySlug.get("otter").domain, "otter.test");
   assert.equal(bySlug.get("otter").services.web.url, "https://*.otter.test");
@@ -147,4 +159,10 @@ test("list --json includes registered worktrees with service URLs", async () => 
   assert.equal(bySlug.get("otter").services.worker.url, null);
   assert.equal(bySlug.get("badger").services.web.port, 5103);
   assert.equal(bySlug.get("lynx").services.api.hostname, "api.lynx.test");
+  assert.equal(byProject.get("acme").baseDomain, "acme.test");
+  assert.equal(byProject.get("acme").configRoot, configRoot);
+  assert.deepEqual(byProject.get("acme").domains, [
+    { hostname: "acme.test", port: 5200, url: "https://acme.test" },
+    { hostname: "api.acme.test", port: 5201, url: "https://api.acme.test" },
+  ]);
 });

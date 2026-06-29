@@ -2,10 +2,10 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import dns from "node:dns/promises";
 import { spawnSync } from "node:child_process";
-import { isDnsmasqRunning } from "../lib/dnsmasq.js";
-import { isCaddyRunning } from "../lib/caddy.js";
+import { hasDnsmasqConf, isDnsmasqRunning } from "../lib/dnsmasq.js";
+import { hasProjectCaddyRoutes, isCaddyRunning } from "../lib/caddy.js";
 import { loadConfig } from "../lib/config.js";
-import { listWorktrees } from "../lib/registry.js";
+import { listProjects, listWorktrees } from "../lib/registry.js";
 import { header, step, info, c, success, warn, error } from "../lib/log.js";
 
 type Result = "pass" | "warn" | "fail";
@@ -77,6 +77,7 @@ export async function doctor(): Promise<boolean> {
   );
 
   const worktrees = listWorktrees();
+  const projects = listProjects();
   if (worktrees.length > 0) {
     const probeHost = `probe.${worktrees[0].slug}.test`;
     try {
@@ -177,46 +178,85 @@ export async function doctor(): Promise<boolean> {
   console.log();
 
   // ── Registry ─────────────────────────────────────────────────────────────────
-  step(`registry (${worktrees.length} ${worktrees.length === 1 ? "entry" : "entries"})`);
+  const entryCount = worktrees.length + projects.length;
+  step(`registry (${entryCount} ${entryCount === 1 ? "entry" : "entries"})`);
 
-  if (worktrees.length === 0) {
-    info("no worktrees registered");
+  if (worktrees.length === 0 && projects.length === 0) {
+    info("no worktrees or projects registered");
   } else {
-    for (const wt of worktrees) {
-      const label = `${wt.name} (${wt.slug})`;
+    if (worktrees.length === 0) {
+      info("no worktrees registered");
+    } else {
+      for (const wt of worktrees) {
+        const label = `${wt.name} (${wt.slug})`;
 
-      const gitDirExists = existsSync(wt.id);
-      check(
-        `${label} — git-dir exists`,
-        gitDirExists ? "pass" : "fail",
-        gitDirExists ? undefined : wt.id,
-        `run 'wtenv deregister --slug ${wt.slug}' or 'wtenv deregister --stale'`
-      );
-
-      const confFile = `/opt/homebrew/etc/dnsmasq.d/${wt.slug}.conf`;
-      const confExists = existsSync(confFile);
-      check(
-        `${label} — dnsmasq conf present`,
-        confExists ? "pass" : "fail",
-        confExists ? undefined : confFile,
-        `re-register with 'wtenv reregister' or cleanup with 'wtenv deregister --slug ${wt.slug}'`
-      );
-
-      for (const [service, port] of Object.entries(wt.ports)) {
-        const pid = listeningPid(port);
-        if (pid === null) continue;
-
-        const cwd = processCwd(pid);
-        const ownProcess =
-          cwd !== null &&
-          (cwd === wt.project_root || cwd.startsWith(wt.project_root + "/"));
-        if (ownProcess) continue;
-
+        const gitDirExists = existsSync(wt.id);
         check(
-          `${label} — ${service} port ${port}`,
-          "warn",
-          cwd ? `in use by process running from ${cwd}` : "in use by unknown process"
+          `${label} — git-dir exists`,
+          gitDirExists ? "pass" : "fail",
+          gitDirExists ? undefined : wt.id,
+          `run 'wtenv deregister --slug ${wt.slug}' or 'wtenv deregister --stale'`
         );
+
+        const confFile = `/opt/homebrew/etc/dnsmasq.d/${wt.slug}.conf`;
+        const confExists = existsSync(confFile);
+        check(
+          `${label} — dnsmasq conf present`,
+          confExists ? "pass" : "fail",
+          confExists ? undefined : confFile,
+          `re-register with 'wtenv reregister' or cleanup with 'wtenv deregister --slug ${wt.slug}'`
+        );
+
+        for (const [service, port] of Object.entries(wt.ports)) {
+          const pid = listeningPid(port);
+          if (pid === null) continue;
+
+          const cwd = processCwd(pid);
+          const ownProcess =
+            cwd !== null &&
+            (cwd === wt.project_root || cwd.startsWith(wt.project_root + "/"));
+          if (ownProcess) continue;
+
+          check(
+            `${label} — ${service} port ${port}`,
+            "warn",
+            cwd ? `in use by process running from ${cwd}` : "in use by unknown process"
+          );
+        }
+      }
+    }
+
+    if (projects.length === 0) {
+      info("no projects registered");
+    } else {
+      for (const project of projects) {
+        const label = `${project.name} (${project.base_domain})`;
+        const confName = `project-${project.name}`;
+        const confExists = hasDnsmasqConf(confName);
+        check(
+          `${label} — dnsmasq conf present`,
+          confExists ? "pass" : "fail",
+          confExists ? undefined : `/opt/homebrew/etc/dnsmasq.d/${confName}.conf`,
+          `re-register with 'wtenv project register --config-root ${project.config_root}'`
+        );
+
+        const hasRoutes = await hasProjectCaddyRoutes(project.name, project.domains);
+        check(
+          `${label} — Caddy routes present`,
+          hasRoutes ? "pass" : "fail",
+          hasRoutes ? undefined : "routes missing",
+          `re-register with 'wtenv project register --config-root ${project.config_root}'`
+        );
+
+        for (const domain of project.domains) {
+          const pid = listeningPid(domain.port);
+          check(
+            `${label} — ${domain.hostname} target :${domain.port}`,
+            pid === null ? "warn" : "pass",
+            pid === null ? "no listening process" : `pid ${pid}`,
+            `start the service for ${domain.hostname}`
+          );
+        }
       }
     }
   }

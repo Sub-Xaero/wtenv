@@ -255,7 +255,7 @@ wtenv project register [--config-root <path>]
 wtenv project deregister [--config-root <path>]
 ```
 
-Both commands read from `.wtenv.config.js` (or `.wtenv.json`) at the git root. Pass `--config-root` to point at a different directory.
+Both commands read from `.wtenv.config.js` (or `.wtenv.json`) at the git root. Pass `--config-root` to point at a different directory. Registered projects are recorded in the wtenv registry so `wtenv list` and `wtenv doctor` can report their domains and health alongside worktrees.
 
 ### How it differs from worktree registration
 
@@ -265,7 +265,7 @@ Both commands read from `.wtenv.config.js` (or `.wtenv.json`) at the git root. P
 | DNS | `*.{slug}.{tld}` | `*.{baseDomain}` |
 | `.local` support | ✅ yes (sudo on each register) | ✅ yes (sudo on each register) |
 | Intended for | Per-branch environments | Shared/singleton services |
-| Persisted in registry | Yes | No |
+| Persisted in registry | Yes | Yes |
 
 ---
 
@@ -484,7 +484,7 @@ wtenv deregister --stale          # remove all orphaned entries whose worktree n
 # Preview what register would do without making changes
 wtenv register --dry-run
 
-# List all registered worktrees with ports and URLs
+# List all registered worktrees/projects with ports and URLs
 wtenv list
 wtenv list --json
 
@@ -541,7 +541,7 @@ Runs a structured health check across three areas and reports each item as `✓ 
 
 - **Infrastructure** — dnsmasq running, `/etc/resolver/test` present, Caddy admin API responding, DNS resolution of `*.test → 127.0.0.1`, PostgreSQL reachable via `pg_isready`
 - **Config** — config file found, loads without errors, at least one service defined, TLD set
-- **Registry** — for each registered worktree: git-dir still exists, dnsmasq conf file present, and any port conflicts (processes listening on allocated ports that don't belong to the worktree itself)
+- **Registry** — for each registered worktree: git-dir still exists, dnsmasq conf file present, and any port conflicts (processes listening on allocated ports that don't belong to the worktree itself). For each registered project: dnsmasq conf present, Caddy routes present, and whether configured target ports have listeners.
 
 Exits with code 1 if any check fails, 0 if all checks are pass or warn. Useful after OS upgrades, environment resets, or onboarding to a new machine.
 

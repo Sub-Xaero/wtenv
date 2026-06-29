@@ -1,4 +1,4 @@
-import { listWorktrees } from "../lib/registry.js";
+import { listProjects, listWorktrees } from "../lib/registry.js";
 import { loadConfig } from "../lib/config.js";
 import { resolveConfigRoot } from "../lib/git.js";
 import type { WtenvConfig } from "../lib/config.js";
@@ -10,13 +10,14 @@ interface ListOptions {
 
 export async function list(options: ListOptions = {}): Promise<void> {
   const worktrees = listWorktrees();
+  const projects = listProjects();
 
-  if (worktrees.length === 0) {
+  if (worktrees.length === 0 && projects.length === 0) {
     if (options.json) {
-      console.log(JSON.stringify({ worktrees: [] }, null, 2));
+      console.log(JSON.stringify({ worktrees: [], projects: [] }, null, 2));
       return;
     }
-    info("No worktrees registered");
+    info("No worktrees or projects registered");
     return;
   }
 
@@ -71,21 +72,52 @@ export async function list(options: ListOptions = {}): Promise<void> {
     });
   }
 
+  const projectRows = projects.map((project) => ({
+    name: project.name,
+    baseDomain: project.base_domain,
+    configRoot: project.config_root,
+    createdAt: project.created_at,
+    updatedAt: project.updated_at,
+    domains: project.domains.map((domain) => ({
+      hostname: domain.hostname,
+      port: domain.port,
+      url: `https://${domain.hostname}`,
+    })),
+  }));
+
   if (options.json) {
-    console.log(JSON.stringify({ worktrees: rows }, null, 2));
+    console.log(JSON.stringify({ worktrees: rows, projects: projectRows }, null, 2));
     return;
   }
 
-  header(`Registered worktrees (${worktrees.length})`);
+  if (rows.length > 0) {
+    header(`Registered worktrees (${worktrees.length})`);
 
-  for (const wt of rows) {
-    const age = formatAge(wt.createdAt);
-    console.log();
-    step(`${wt.name}  →  ${wt.domain}  ${c.dim(`(${age})`)}`);
-    info(`${c.dim("project:")} ${wt.projectRoot}`);
+    for (const wt of rows) {
+      const age = formatAge(wt.createdAt);
+      console.log();
+      step(`${wt.name}  →  ${wt.domain}  ${c.dim(`(${age})`)}`);
+      info(`${c.dim("project:")} ${wt.projectRoot}`);
 
-    for (const [service, details] of Object.entries(wt.services)) {
-      info(`${service.padEnd(10)} :${details.port}${details.hostname ? `   ${details.url}` : ""}`);
+      for (const [service, details] of Object.entries(wt.services)) {
+        info(`${service.padEnd(10)} :${details.port}${details.hostname ? `   ${details.url}` : ""}`);
+      }
+    }
+  }
+
+  if (projectRows.length > 0) {
+    if (rows.length > 0) console.log();
+    header(`Registered projects (${projects.length})`);
+
+    for (const project of projectRows) {
+      const age = formatAge(project.updatedAt);
+      console.log();
+      step(`${project.name}  →  ${project.baseDomain}  ${c.dim(`(${age})`)}`);
+      info(`${c.dim("config:")} ${project.configRoot}`);
+
+      for (const domain of project.domains) {
+        info(`${domain.hostname.padEnd(24)} :${domain.port}   ${domain.url}`);
+      }
     }
   }
   console.log();

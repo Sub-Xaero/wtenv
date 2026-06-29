@@ -119,6 +119,44 @@ test("releaseWorktree removes the worktree and cascades port assignments", () =>
   assert.deepEqual(registry.getWorktreePorts("worktree-a"), {});
 });
 
+test("project registrations store static domains and replace on re-register", () => {
+  registry.registerProjectRegistration(
+    "acme",
+    "/tmp/acme",
+    "acme.test",
+    [
+      { hostname: "acme.test", port: 5000 },
+      { hostname: "api.acme.test", port: 5001 },
+    ],
+  );
+
+  let projects = registry.listProjects();
+  assert.equal(projects.length, 1);
+  assert.equal(projects[0].name, "acme");
+  assert.equal(projects[0].config_root, "/tmp/acme");
+  assert.equal(projects[0].base_domain, "acme.test");
+  assert.deepEqual(projects[0].domains, [
+    { hostname: "acme.test", port: 5000 },
+    { hostname: "api.acme.test", port: 5001 },
+  ]);
+
+  registry.registerProjectRegistration(
+    "acme",
+    "/tmp/acme-renamed",
+    "acme.local",
+    [{ hostname: "acme.local", port: 5100 }],
+  );
+
+  projects = registry.listProjects();
+  assert.equal(projects.length, 1);
+  assert.equal(projects[0].config_root, "/tmp/acme-renamed");
+  assert.equal(projects[0].base_domain, "acme.local");
+  assert.deepEqual(projects[0].domains, [{ hostname: "acme.local", port: 5100 }]);
+
+  registry.releaseProjectRegistration("acme");
+  assert.deepEqual(registry.listProjects(), []);
+});
+
 test("Redis database allocation uses the first free index and releases it", () => {
   registry.allocateWorktree(
     "worktree-d",

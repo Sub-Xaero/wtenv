@@ -61,6 +61,22 @@ function migrate(db) {
       PRIMARY KEY (worktree_id),
       FOREIGN KEY (worktree_id) REFERENCES worktrees(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      name          TEXT PRIMARY KEY,
+      config_root   TEXT NOT NULL,
+      base_domain   TEXT NOT NULL,
+      created_at    INTEGER NOT NULL,
+      updated_at    INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS project_domains (
+      project_name  TEXT NOT NULL,
+      hostname      TEXT NOT NULL,
+      port          INTEGER NOT NULL,
+      PRIMARY KEY (project_name, hostname),
+      FOREIGN KEY (project_name) REFERENCES projects(name) ON DELETE CASCADE
+    );
   `);
 }
 function pickSlug(db, hint) {
@@ -128,6 +144,62 @@ export function releaseWorktree(id) {
     try {
         // ON DELETE CASCADE cleans up port_assignments
         db.prepare("DELETE FROM worktrees WHERE id = ?").run(id);
+    }
+    finally {
+        db.close();
+    }
+}
+export function registerProjectRegistration(name, configRoot, baseDomain, domains) {
+    const db = openDb();
+    try {
+        const now = Date.now();
+        const existing = db.prepare("SELECT created_at FROM projects WHERE name = ?").get(name);
+        const createdAt = existing?.created_at ?? now;
+        db.exec("BEGIN");
+        try {
+            db.prepare(`INSERT OR REPLACE INTO projects
+          (name, config_root, base_domain, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`).run(name, configRoot, baseDomain, createdAt, now);
+            db.prepare("DELETE FROM project_domains WHERE project_name = ?").run(name);
+            const insertDomain = db.prepare("INSERT INTO project_domains (project_name, hostname, port) VALUES (?, ?, ?)");
+            for (const domain of domains) {
+                insertDomain.run(name, domain.hostname, domain.port);
+            }
+            db.exec("COMMIT");
+        }
+        catch (err) {
+            db.exec("ROLLBACK");
+            throw err;
+        }
+    }
+    finally {
+        db.close();
+    }
+}
+export function releaseProjectRegistration(name) {
+    const db = openDb();
+    try {
+        db.prepare("DELETE FROM projects WHERE name = ?").run(name);
+    }
+    finally {
+        db.close();
+    }
+}
+export function listProjects() {
+    const db = openDb();
+    try {
+        const projects = db
+            .prepare("SELECT * FROM projects ORDER BY updated_at DESC")
+            .all();
+        return projects.map((project) => {
+            const domains = db
+                .prepare("SELECT hostname, port FROM project_domains WHERE project_name = ? ORDER BY hostname")
+                .all(project.name);
+            return {
+                ...project,
+                domains: domains.map((domain) => ({ hostname: domain.hostname, port: domain.port })),
+            };
+        });
     }
     finally {
         db.close();

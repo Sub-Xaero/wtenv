@@ -1,3 +1,4 @@
+import type { ProjectDomain } from "./config.js";
 export interface Worktree {
     id: string;
     name: string;
@@ -10,6 +11,13 @@ export interface PortAssignment {
     service_name: string;
     port: number;
 }
+export interface ProjectRegistration {
+    name: string;
+    config_root: string;
+    base_domain: string;
+    created_at: number;
+    updated_at: number;
+}
 export interface AllocateOptions {
     slugHint?: string;
 }
@@ -20,6 +28,11 @@ export interface AllocationResult {
 }
 export declare function allocateWorktree(id: string, name: string, projectRoot: string, services: string[], portRange: [number, number], options?: AllocateOptions): AllocationResult;
 export declare function releaseWorktree(id: string): void;
+export declare function registerProjectRegistration(name: string, configRoot: string, baseDomain: string, domains: ProjectDomain[]): void;
+export declare function releaseProjectRegistration(name: string): void;
+export declare function listProjects(): Array<ProjectRegistration & {
+    domains: ProjectDomain[];
+}>;
 export declare function renameWorktreeSlug(id: string, slug: string): void;
 export declare function getWorktree(id: string): Worktree | null;
 export declare function getWorktreeBySlug(slug: string): Worktree | null;

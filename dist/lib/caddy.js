@@ -198,6 +198,13 @@ export async function hasCaddyRoutes(slug, tld) {
     const routes = config.apps?.http?.servers?.wtenv?.routes ?? [];
     return routes.some((r) => r.match?.some((m) => m.host?.some((h) => isWorktreeHost(h, slug, tld))));
 }
+export async function hasProjectCaddyRoutes(projectName, domains) {
+    const config = await getConfig();
+    if (!config)
+        return false;
+    const routes = config.apps?.http?.servers?.wtenv?.routes ?? [];
+    return domains.every((domain) => routes.some((r) => r.match?.some((m) => m.host?.some((h) => isProjectRoute(h, projectName, [domain])))));
+}
 export async function isCaddyRunning() {
     try {
         const { status } = await httpRequest({

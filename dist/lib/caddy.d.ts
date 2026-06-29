@@ -6,4 +6,5 @@ export declare function deregisterProjectCaddy(projectName: string, domains: Pro
 export declare function setListener(ports: string[]): Promise<void>;
 export declare function detectCaddyConflict(): string | null;
 export declare function hasCaddyRoutes(slug: string, tld: string): Promise<boolean>;
+export declare function hasProjectCaddyRoutes(projectName: string, domains: ProjectDomain[]): Promise<boolean>;
 export declare function isCaddyRunning(): Promise<boolean>;

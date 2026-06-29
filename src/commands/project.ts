@@ -1,10 +1,11 @@
 import { existsSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { loadConfig } from "../lib/config.js";
 import { registerProjectDnsmasq, deregisterProjectDnsmasq } from "../lib/dnsmasq.js";
 import { registerProjectCaddy, deregisterProjectCaddy } from "../lib/caddy.js";
 import { deregisterHostsEntries } from "../lib/hosts.js";
 import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "../lib/mdns.js";
+import { registerProjectRegistration, releaseProjectRegistration } from "../lib/registry.js";
 import { resolveConfigRoot } from "../lib/git.js";
 import { detectProjectName } from "./init.js";
 import { header, step, info, success, error, c } from "../lib/log.js";
@@ -14,7 +15,7 @@ interface ProjectOptions {
 }
 
 export async function projectRegister(opts: ProjectOptions = {}): Promise<void> {
-  const configRoot = opts.configRoot ?? resolveConfigRoot();
+  const configRoot = opts.configRoot ? resolve(opts.configRoot) : resolveConfigRoot();
   const config = await loadConfig(configRoot);
 
   if (!config.project) {
@@ -53,6 +54,11 @@ export async function projectRegister(opts: ProjectOptions = {}): Promise<void> 
   for (const d of domains) {
     console.log(`        ${d.hostname.padEnd(padTo)}  → :${d.port}`);
   }
+  console.log();
+
+  step("registry");
+  registerProjectRegistration(name, configRoot, baseDomain, domains);
+  info(`registered ${domains.length} static domain${domains.length === 1 ? "" : "s"}`);
   console.log();
 
   success(`Project '${name}' registered — https://${baseDomain} is live`);
@@ -131,7 +137,7 @@ export function projectInit(options: { force?: boolean; cwd?: string } = {}): vo
 }
 
 export async function projectDeregister(opts: ProjectOptions = {}): Promise<void> {
-  const configRoot = opts.configRoot ?? resolveConfigRoot();
+  const configRoot = opts.configRoot ? resolve(opts.configRoot) : resolveConfigRoot();
   const config = await loadConfig(configRoot);
 
   if (!config.project) {
@@ -164,6 +170,11 @@ export async function projectDeregister(opts: ProjectOptions = {}): Promise<void
     info(`removed mDNS LaunchAgent (wtenv.mdns.${name})`);
   }
   deregisterHostsEntries(name);
+  console.log();
+
+  step("registry");
+  releaseProjectRegistration(name);
+  info("removed project registration");
   console.log();
 
   success(`Project '${name}' deregistered`);

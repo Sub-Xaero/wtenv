@@ -297,6 +297,20 @@ export async function hasCaddyRoutes(slug: string, tld: string): Promise<boolean
   );
 }
 
+export async function hasProjectCaddyRoutes(
+  projectName: string,
+  domains: ProjectDomain[]
+): Promise<boolean> {
+  const config = await getConfig();
+  if (!config) return false;
+  const routes = config.apps?.http?.servers?.wtenv?.routes ?? [];
+  return domains.every((domain) =>
+    routes.some((r) =>
+      r.match?.some((m) => m.host?.some((h) => isProjectRoute(h, projectName, [domain])))
+    )
+  );
+}
+
 export async function isCaddyRunning(): Promise<boolean> {
   try {
     const { status } = await httpRequest({
