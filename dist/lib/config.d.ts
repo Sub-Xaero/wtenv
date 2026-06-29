@@ -33,6 +33,7 @@ export interface PluginContext {
     slug: string;
     cwd: string;
     configRoot: string;
+    gitRoot: string;
     ports: Record<string, number>;
     envVars: Record<string, string>;
     config: Readonly<Omit<WtenvConfig, "plugins">>;

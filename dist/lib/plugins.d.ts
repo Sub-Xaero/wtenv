@@ -22,6 +22,7 @@ export interface CopyFilesEntry {
 }
 export interface CopyFilesOptions {
     files: Array<string | CopyFilesEntry>;
+    from?: string;
     label?: string;
 }
 export declare function copyFiles(options: CopyFilesOptions): Plugin;

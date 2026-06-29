@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { loadConfig } from "../lib/config.js";
 import { executePlan, invertPlan } from "../lib/plan.js";
 import { getWorktree, getWorktreePorts, getWorktreeBySlug, listWorktrees } from "../lib/registry.js";
-import { worktreeRoot, resolveConfigRoot, worktreeId } from "../lib/git.js";
+import { worktreeRoot, resolveConfigRoot, gitRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
 import { captureLogs, flushCapturedLog, header, step, info, success, error, warn } from "../lib/log.js";
 function shortName(pluginName) {
@@ -41,6 +41,7 @@ export async function deregister(name, opts = {}) {
         slug: wt.slug,
         cwd,
         configRoot,
+        gitRoot: gitRoot(cwd) ?? configRoot,
         ports: getWorktreePorts(id),
         envVars: {},
         config,

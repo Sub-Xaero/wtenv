@@ -285,7 +285,8 @@ interface PluginContext {
   worktreeName: string;           // display name (cwd basename at register time)
   slug:         string;           // checked-out animal name (DNS label) — forms the domain {slug}.{tld} (populated by ports())
   cwd:          string;           // worktree directory
-  configRoot:   string;           // main checkout directory
+  configRoot:   string;           // where .wtenv.config.js was loaded from (the worktree itself if it carries its own copy)
+  gitRoot:      string;           // the main checkout — stable copy-files source regardless of configRoot
   ports:        Record<string, number>;  // mutable — populated by ports()
   envVars:      Record<string, string>;  // mutable — accumulated by plugins
   config:       Readonly<WtenvConfig>;
@@ -369,7 +370,7 @@ plugins: [
 
 #### `copyFiles(options)`
 
-Copies files from `configRoot` (main checkout) into `cwd` (worktree). Useful for seeding credentials and config files that aren't committed to git.
+Copies files from the **git root** (the main checkout) into `cwd` (worktree). Useful for seeding credentials and config files that aren't committed to git.
 
 ```js
 copyFiles({
@@ -382,6 +383,10 @@ copyFiles({
   ],
 })
 ```
+
+The source is always the **git root** (`git rev-parse --git-common-dir` resolved to its parent), *not* `configRoot`. This matters when `.wtenv.config.js` is committed to the repo: each worktree then carries its own copy, so `configRoot` collapses onto the worktree itself — but copy-files still seeds from the main checkout. When you register the main checkout itself (git root === cwd) copy-files is a no-op, since there's nothing to copy onto itself.
+
+Options: `files` (required), `from` (alternate source directory — relative paths resolve against the git root, absolute paths are used as-is), and `label`.
 
 Entry options: `src` (required), `dest` (defaults to `src`), `optional` (skip if the source is missing instead of throwing), and `symlink`.
 

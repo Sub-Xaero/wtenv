@@ -58,7 +58,8 @@ export interface PluginContext {
   worktreeName: string;   // display name (cwd basename — may change if the directory is renamed)
   slug: string;           // checked-out animal name, the DNS label — forms the domain {slug}.{tld}
   cwd: string;
-  configRoot: string;
+  configRoot: string;     // where .wtenv.config.js was loaded from (may be the worktree itself)
+  gitRoot: string;        // the main checkout — stable copy-files source regardless of configRoot
   ports: Record<string, number>;
   envVars: Record<string, string>;
   config: Readonly<Omit<WtenvConfig, "plugins">>;

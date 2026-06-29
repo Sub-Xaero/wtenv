@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   writeFileSync,
@@ -32,6 +33,7 @@ function baseContext(overrides = {}) {
     slug: "otter",
     cwd,
     configRoot: cwd,
+    gitRoot: cwd,
     ports: {},
     envVars: {},
     config: {
@@ -113,10 +115,10 @@ test("direnv writes and removes .envrc with the configured dotenv stack", () => 
 });
 
 test("copyFiles copies files, creates symlinks, skips optional files, and removes only its symlinks", () => {
-  const configRoot = tempDir("wtenv-copy-source-");
+  const gitRoot = tempDir("wtenv-copy-source-");
   const cwd = tempDir("wtenv-copy-dest-");
-  writeFileSync(join(configRoot, "required.txt"), "required");
-  writeFileSync(join(configRoot, "shared.txt"), "shared");
+  writeFileSync(join(gitRoot, "required.txt"), "required");
+  writeFileSync(join(gitRoot, "shared.txt"), "shared");
 
   const plugin = copyFiles({
     files: [
@@ -125,7 +127,7 @@ test("copyFiles copies files, creates symlinks, skips optional files, and remove
       { src: "shared.txt", dest: "links/shared.txt", symlink: true },
     ],
   });
-  const ctx = baseContext({ configRoot, cwd });
+  const ctx = baseContext({ gitRoot, cwd });
 
   plugin.onRegister(ctx);
 
@@ -142,20 +144,62 @@ test("copyFiles copies files, creates symlinks, skips optional files, and remove
 });
 
 test("copyFiles leaves existing symlink destinations untouched", () => {
-  const configRoot = tempDir("wtenv-copy-source-");
+  const gitRoot = tempDir("wtenv-copy-source-");
   const cwd = tempDir("wtenv-copy-dest-");
-  writeFileSync(join(configRoot, "shared.txt"), "shared");
+  writeFileSync(join(gitRoot, "shared.txt"), "shared");
   writeFileSync(join(cwd, "shared-link.txt"), "existing file");
 
   const plugin = copyFiles({
     files: [{ src: "shared.txt", dest: "shared-link.txt", symlink: true }],
   });
-  const ctx = baseContext({ configRoot, cwd });
+  const ctx = baseContext({ gitRoot, cwd });
 
   plugin.onRegister(ctx);
   plugin.onDeregister(ctx);
 
   assert.equal(readFileSync(join(cwd, "shared-link.txt"), "utf8"), "existing file");
+});
+
+test("copyFiles seeds from gitRoot even when configRoot collapses onto the worktree", () => {
+  // Worktree carries its own committed .wtenv.config.js, so configRoot === cwd.
+  // copy-files must still copy from the main checkout (gitRoot), not no-op.
+  const gitRoot = tempDir("wtenv-copy-source-");
+  const cwd = tempDir("wtenv-copy-dest-");
+  writeFileSync(join(gitRoot, "master.key"), "key123");
+
+  const plugin = copyFiles({ files: ["master.key"] });
+  const ctx = baseContext({ gitRoot, configRoot: cwd, cwd });
+
+  plugin.onRegister(ctx);
+
+  assert.equal(readFileSync(join(cwd, "master.key"), "utf8"), "key123");
+});
+
+test("copyFiles honors a 'from' override for an alternate source directory", () => {
+  const gitRoot = tempDir("wtenv-copy-source-");
+  const cwd = tempDir("wtenv-copy-dest-");
+  mkdirSync(join(gitRoot, "secrets"), { recursive: true });
+  writeFileSync(join(gitRoot, "secrets", "token.txt"), "from-secrets");
+
+  const plugin = copyFiles({ from: "secrets", files: ["token.txt"] });
+  const ctx = baseContext({ gitRoot, configRoot: cwd, cwd });
+
+  plugin.onRegister(ctx);
+
+  assert.equal(readFileSync(join(cwd, "token.txt"), "utf8"), "from-secrets");
+});
+
+test("copyFiles skips when the resolved source equals cwd (registering the main checkout)", () => {
+  const cwd = tempDir("wtenv-copy-main-");
+  writeFileSync(join(cwd, "self.txt"), "self");
+
+  const plugin = copyFiles({ files: ["self.txt"] });
+  // gitRoot === cwd happens when you register the main checkout itself.
+  const ctx = baseContext({ gitRoot: cwd, configRoot: cwd, cwd });
+
+  // Must not throw or try to copy a file onto itself.
+  plugin.onRegister(ctx);
+  assert.equal(readFileSync(join(cwd, "self.txt"), "utf8"), "self");
 });
 
 test("ports plugin allocates slug, ports, and generated domain env vars", () => {

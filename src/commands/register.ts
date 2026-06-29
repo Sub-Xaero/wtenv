@@ -4,7 +4,7 @@ import { loadConfig } from "../lib/config.js";
 import type { Plugin, PluginContext } from "../lib/config.js";
 import type { PortsPlugin } from "../lib/plugins.js";
 import { executePlan, flattenPlan, invertPlan, PlanExecutionError, sequence } from "../lib/plan.js";
-import { worktreeRoot, resolveConfigRoot, worktreeId } from "../lib/git.js";
+import { worktreeRoot, resolveConfigRoot, gitRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
 import { captureLogs, flushCapturedLog, header, step, info, success, error, warn, c } from "../lib/log.js";
 
@@ -73,6 +73,7 @@ export async function register(
     slug: "",
     cwd,
     configRoot,
+    gitRoot: gitRoot(cwd) ?? configRoot,
     ports: {},
     envVars,
     config,

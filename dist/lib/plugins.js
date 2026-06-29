@@ -1,5 +1,5 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { parseEnv } from "node:util";
 import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
@@ -147,8 +147,9 @@ export function copyFiles(options) {
     return {
         name: options.label ? `wtenv:copy-files:${options.label}` : "wtenv:copy-files",
         onRegister(ctx) {
-            if (ctx.configRoot === ctx.cwd) {
-                warn("configRoot === cwd, skipping copy-files");
+            const sourceRoot = options.from ? resolve(ctx.gitRoot, options.from) : ctx.gitRoot;
+            if (sourceRoot === ctx.cwd) {
+                warn("source === cwd, skipping copy-files");
                 return;
             }
             let copied = 0;
@@ -156,7 +157,7 @@ export function copyFiles(options) {
             let skipped = 0;
             for (const entry of options.files) {
                 const { src, dest, optional, symlink } = normalizeCopyEntry(entry);
-                const srcPath = join(ctx.configRoot, src);
+                const srcPath = join(sourceRoot, src);
                 const destPath = join(ctx.cwd, dest);
                 if (!existsSync(srcPath)) {
                     if (optional) {
@@ -192,7 +193,8 @@ export function copyFiles(options) {
             info(parts.join(", "));
         },
         onDeregister(ctx) {
-            if (ctx.configRoot === ctx.cwd)
+            const sourceRoot = options.from ? resolve(ctx.gitRoot, options.from) : ctx.gitRoot;
+            if (sourceRoot === ctx.cwd)
                 return;
             let removed = 0;
             for (const entry of options.files) {

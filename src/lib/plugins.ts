@@ -1,5 +1,5 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { parseEnv } from "node:util";
 import { registerDnsmasq, deregisterDnsmasq } from "./dnsmasq.js";
@@ -133,14 +133,19 @@ export interface CopyFilesEntry {
   src: string;
   dest?: string;
   optional?: boolean;
-  // When true, symlink dest → src (in configRoot) instead of copying. The link
-  // is removed again on deregister. Use for shared, mutable directories that
+  // When true, symlink dest → src (in the source root) instead of copying. The
+  // link is removed again on deregister. Use for shared, mutable directories that
   // should stay in sync across worktrees (e.g. Active Storage `storage/`).
   symlink?: boolean;
 }
 
 export interface CopyFilesOptions {
   files: Array<string | CopyFilesEntry>;
+  // Source directory to copy from. Defaults to the git root (the main checkout),
+  // so secrets seed correctly even when the worktree carries its own committed
+  // .wtenv.config.js (which collapses configRoot onto the worktree). Relative
+  // paths resolve against the git root; absolute paths are used as-is.
+  from?: string;
   // Distinguishes this instance in the register/deregister step log when a
   // config uses more than one copyFiles(). Shown as `copy-files:<label>`.
   label?: string;
@@ -197,8 +202,9 @@ export function copyFiles(options: CopyFilesOptions): Plugin {
   return {
     name: options.label ? `wtenv:copy-files:${options.label}` : "wtenv:copy-files",
     onRegister(ctx: PluginContext) {
-      if (ctx.configRoot === ctx.cwd) {
-        warn("configRoot === cwd, skipping copy-files");
+      const sourceRoot = options.from ? resolve(ctx.gitRoot, options.from) : ctx.gitRoot;
+      if (sourceRoot === ctx.cwd) {
+        warn("source === cwd, skipping copy-files");
         return;
       }
       let copied = 0;
@@ -206,7 +212,7 @@ export function copyFiles(options: CopyFilesOptions): Plugin {
       let skipped = 0;
       for (const entry of options.files) {
         const { src, dest, optional, symlink } = normalizeCopyEntry(entry);
-        const srcPath = join(ctx.configRoot, src);
+        const srcPath = join(sourceRoot, src);
         const destPath = join(ctx.cwd, dest);
         if (!existsSync(srcPath)) {
           if (optional) {
@@ -239,7 +245,8 @@ export function copyFiles(options: CopyFilesOptions): Plugin {
       info(parts.join(", "));
     },
     onDeregister(ctx: PluginContext) {
-      if (ctx.configRoot === ctx.cwd) return;
+      const sourceRoot = options.from ? resolve(ctx.gitRoot, options.from) : ctx.gitRoot;
+      if (sourceRoot === ctx.cwd) return;
       let removed = 0;
       for (const entry of options.files) {
         const { dest, symlink } = normalizeCopyEntry(entry);

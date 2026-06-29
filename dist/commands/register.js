@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { loadConfig } from "../lib/config.js";
 import { executePlan, flattenPlan, invertPlan, PlanExecutionError, sequence } from "../lib/plan.js";
-import { worktreeRoot, resolveConfigRoot, worktreeId } from "../lib/git.js";
+import { worktreeRoot, resolveConfigRoot, gitRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
 import { captureLogs, flushCapturedLog, header, step, info, success, error, warn, c } from "../lib/log.js";
 function shortName(pluginName) {
@@ -55,6 +55,7 @@ export async function register(name, opts = {}) {
         slug: "",
         cwd,
         configRoot,
+        gitRoot: gitRoot(cwd) ?? configRoot,
         ports: {},
         envVars,
         config,
