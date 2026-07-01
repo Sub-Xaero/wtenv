@@ -19,6 +19,16 @@ import { run } from "./commands/run.js";
 import { listSlugs, renameSlug } from "./commands/slug.js";
 import { current } from "./commands/current.js";
 const program = new Command();
+function parseWaitOpts(opts) {
+    if (opts.wait && opts.waitAsync) {
+        throw new Error("--wait and --wait-async are mutually exclusive — pick one.");
+    }
+    const timeout = Number(opts.timeout);
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+        throw new Error(`Invalid --timeout '${opts.timeout}' — must be a positive number of seconds.`);
+    }
+    return { wait: opts.wait, waitAsync: opts.waitAsync, timeout };
+}
 program
     .name("wtenv")
     .description("Worktree environment manager for Conductor-managed git worktrees")
@@ -213,9 +223,13 @@ program
     .command("open [arg]")
     .description("Open this worktree's domain (optionally with a subdomain or service name) in the default browser")
     .option("--print", "Print the URL instead of opening it")
+    .option("--wait", "Block until the URL responds, then open (or print) it")
+    .option("--wait-async", "Poll in the background and open once ready — returns immediately, doesn't block the shell")
+    .option("--timeout <seconds>", "Max seconds to poll with --wait/--wait-async", "60")
     .action(async (arg, opts) => {
     try {
-        await open(arg, { print: opts.print });
+        const waitOpts = parseWaitOpts(opts);
+        await open(arg, { print: opts.print, ...waitOpts });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);
@@ -344,9 +358,13 @@ projectCmd
     .description("Open the configured project baseDomain (optionally with a subdomain) in the default browser")
     .option("--config-root <path>", "Directory containing .wtenv.config.js (default: git root)")
     .option("--print", "Print the URL instead of opening it")
+    .option("--wait", "Block until the URL responds, then open (or print) it")
+    .option("--wait-async", "Poll in the background and open once ready — returns immediately, doesn't block the shell")
+    .option("--timeout <seconds>", "Max seconds to poll with --wait/--wait-async", "60")
     .action(async (arg, opts) => {
     try {
-        await projectOpen(arg, { configRoot: opts.configRoot, print: opts.print });
+        const waitOpts = parseWaitOpts(opts);
+        await projectOpen(arg, { configRoot: opts.configRoot, print: opts.print, ...waitOpts });
     }
     catch (err) {
         console.error(err instanceof Error ? err.message : err);

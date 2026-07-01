@@ -1,28 +1,115 @@
 import { spawn } from "node:child_process";
+import https from "node:https";
 import { loadConfig } from "../lib/config.js";
 import { getWorktree } from "../lib/registry.js";
 import { resolveConfigRoot, worktreeId, worktreeRoot } from "../lib/git.js";
 import { header, error } from "../lib/log.js";
 
+const DEFAULT_WAIT_TIMEOUT_SECONDS = 60;
+const POLL_INTERVAL_MS = 250;
+
 interface OpenOptions {
   cwd?: string;
   configRoot?: string;
   print?: boolean;
+  wait?: boolean;
+  waitAsync?: boolean;
+  timeout?: number;
 }
 
 interface ProjectOpenOptions {
   configRoot?: string;
   print?: boolean;
+  wait?: boolean;
+  waitAsync?: boolean;
+  timeout?: number;
 }
 
-// In --print mode, emit just the URL so it can be piped/captured.
-// Otherwise announce what we're opening, then fork `open` and unref so the CLI
-// returns immediately (the browser launches asynchronously).
-function launch(url: string, print: boolean): void {
-  if (print) {
+interface LaunchOptions {
+  print: boolean;
+  wait?: boolean;
+  waitAsync?: boolean;
+  timeout?: number;
+}
+
+// A single reachability check: any HTTP response (even a 4xx/5xx from the app,
+// or a Caddy error page) proves something answered. Cert validation is off —
+// we only care that the app responded, not who signed its locally-trusted cert.
+function probe(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = https.get(url, { rejectUnauthorized: false, timeout: 2000 }, (res) => {
+      res.resume();
+      resolve(true);
+    });
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function pollUntilReady(url: string, timeoutSeconds: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  do {
+    if (await probe(url)) return true;
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  } while (Date.now() < deadline);
+  return false;
+}
+
+// Polls in a detached child so the invoking shell gets its terminal back
+// immediately — e.g. a setup script running `wtenv open --wait` before a
+// long-running `bin/dev` shouldn't have to wait for the dev server to boot.
+function spawnWaitAndOpen(url: string, timeoutSeconds: number): void {
+  const script = `
+    const https = require("node:https");
+    const { spawn } = require("node:child_process");
+    const deadline = Date.now() + ${timeoutSeconds * 1000};
+    function probe() {
+      return new Promise((resolve) => {
+        const req = https.get(${JSON.stringify(url)}, { rejectUnauthorized: false, timeout: 2000 }, (res) => {
+          res.resume();
+          resolve(true);
+        });
+        req.on("error", () => resolve(false));
+        req.on("timeout", () => { req.destroy(); resolve(false); });
+      });
+    }
+    (async () => {
+      do {
+        if (await probe()) break;
+        await new Promise((r) => setTimeout(r, ${POLL_INTERVAL_MS}));
+      } while (Date.now() < deadline);
+      spawn("open", [${JSON.stringify(url)}], { stdio: "ignore", detached: true }).unref();
+    })();
+  `;
+  spawn(process.execPath, ["-e", script], { stdio: "ignore", detached: true }).unref();
+}
+
+// --wait-async hands the poll off to a detached child and returns immediately
+// — the caller's terminal is free right away (see spawnWaitAndOpen above).
+// --wait blocks this process until the URL responds (or times out).
+// Either way, once we reach the bottom we're "ready": print the URL, or fork
+// `open` and unref so the CLI returns immediately (browser launches async).
+async function launch(url: string, opts: LaunchOptions): Promise<void> {
+  const timeout = opts.timeout ?? DEFAULT_WAIT_TIMEOUT_SECONDS;
+
+  if (opts.waitAsync) {
+    header(`Waiting for ${url} in the background (up to ${timeout}s) — will open once it responds`);
+    spawnWaitAndOpen(url, timeout);
+    return;
+  }
+
+  if (opts.wait && !(await pollUntilReady(url, timeout))) {
+    error(`Timed out after ${timeout}s waiting for ${url}`);
+  }
+
+  if (opts.print) {
     console.log(url);
     return;
   }
+
   header(`Opening ${url}`);
   spawn("open", [url], { stdio: "ignore", detached: true }).unref();
 }
@@ -60,7 +147,12 @@ export async function open(arg: string | undefined, opts: OpenOptions = {}): Pro
   }
 
   const host = subdomain ? `${subdomain}.${wt.slug}.${config.tld}` : `${wt.slug}.${config.tld}`;
-  launch(`https://${host}`, opts.print ?? false);
+  await launch(`https://${host}`, {
+    print: opts.print ?? false,
+    wait: opts.wait,
+    waitAsync: opts.waitAsync,
+    timeout: opts.timeout,
+  });
 }
 
 export async function projectOpen(
@@ -80,5 +172,10 @@ export async function projectOpen(
     prefix = config.aliases?.[arg] ?? arg;
   }
   const host = prefix ? `${prefix}.${config.project.baseDomain}` : config.project.baseDomain;
-  launch(`https://${host}`, opts.print ?? false);
+  await launch(`https://${host}`, {
+    print: opts.print ?? false,
+    wait: opts.wait,
+    waitAsync: opts.waitAsync,
+    timeout: opts.timeout,
+  });
 }
