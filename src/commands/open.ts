@@ -7,6 +7,9 @@ import { header, error } from "../lib/log.js";
 
 const DEFAULT_WAIT_TIMEOUT_SECONDS = 60;
 const POLL_INTERVAL_MS = 250;
+// Caddy itself returns these when the upstream app hasn't come up yet — they
+// mean "Caddy is up, the app isn't" rather than "ready."
+const GATEWAY_ERROR_STATUS_CODES = new Set([502, 503, 504]);
 
 interface OpenOptions {
   cwd?: string;
@@ -32,14 +35,15 @@ interface LaunchOptions {
   timeout?: number;
 }
 
-// A single reachability check: any HTTP response (even a 4xx/5xx from the app,
-// or a Caddy error page) proves something answered. Cert validation is off —
-// we only care that the app responded, not who signed its locally-trusted cert.
+// A single reachability check: any HTTP response counts as "ready" — even a
+// 4xx/5xx from the app itself — except Caddy's own gateway error codes, which
+// mean the app behind it isn't answering yet. Cert validation is off — we
+// only care that something responded, not who signed its locally-trusted cert.
 function probe(url: string): Promise<boolean> {
   return new Promise((resolve) => {
     const req = https.get(url, { rejectUnauthorized: false, timeout: 2000 }, (res) => {
       res.resume();
-      resolve(true);
+      resolve(!GATEWAY_ERROR_STATUS_CODES.has(res.statusCode ?? 0));
     });
     req.on("error", () => resolve(false));
     req.on("timeout", () => {
@@ -65,12 +69,13 @@ function spawnWaitAndOpen(url: string, timeoutSeconds: number): void {
   const script = `
     const https = require("node:https");
     const { spawn } = require("node:child_process");
+    const gatewayErrorStatusCodes = new Set(${JSON.stringify([...GATEWAY_ERROR_STATUS_CODES])});
     const deadline = Date.now() + ${timeoutSeconds * 1000};
     function probe() {
       return new Promise((resolve) => {
         const req = https.get(${JSON.stringify(url)}, { rejectUnauthorized: false, timeout: 2000 }, (res) => {
           res.resume();
-          resolve(true);
+          resolve(!gatewayErrorStatusCodes.has(res.statusCode));
         });
         req.on("error", () => resolve(false));
         req.on("timeout", () => { req.destroy(); resolve(false); });
