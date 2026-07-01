@@ -6,7 +6,7 @@ import type { PortsPlugin } from "../lib/plugins.js";
 import { executePlan, flattenPlan, invertPlan, PlanExecutionError, sequence } from "../lib/plan.js";
 import { worktreeRoot, resolveConfigRoot, gitRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
-import { captureLogs, flushCapturedLog, header, step, info, success, error, warn, c } from "../lib/log.js";
+import { captureLogs, header, step, info, success, error, warn, c } from "../lib/log.js";
 
 interface RegisterOptions {
   cwd?: string;
@@ -87,26 +87,34 @@ export async function register(
 
   let completed = sequence<Plugin>([]);
   try {
-    completed = await executePlan(config.plugins, async (plugin) => {
-      if (!plugin.onRegister) return false;
-      const captured = await captureLogs(async () => {
-        step(shortName(plugin.name));
-        await plugin.onRegister!(ctx);
-        console.log();
-      });
-      flushCapturedLog(captured.output);
-      if (!captured.ok) throw captured.error;
-    });
+    completed = await executePlan(
+      config.plugins,
+      async (plugin, reporter) => {
+        if (!plugin.onRegister) return false;
+        const captured = await captureLogs(async () => {
+          if (!reporter.managed) step(shortName(plugin.name));
+          await plugin.onRegister!(ctx);
+          if (!reporter.managed) console.log();
+        });
+        reporter.flush(captured.output);
+        if (!captured.ok) throw captured.error;
+      },
+      { label: (plugin) => shortName(plugin.name) }
+    );
   } catch (err) {
     const completedPlan = err instanceof PlanExecutionError ? err.completed : completed;
     error("Plugin failed — rolling back...");
-    await executePlan(invertPlan(completedPlan), async (plugin) => {
-      if (!plugin.onDeregister) return false;
-      try {
-        const captured = await captureLogs(() => plugin.onDeregister!(ctx));
-        flushCapturedLog(captured.output);
-      } catch {}
-    });
+    await executePlan(
+      invertPlan(completedPlan),
+      async (plugin, reporter) => {
+        if (!plugin.onDeregister) return false;
+        try {
+          const captured = await captureLogs(() => plugin.onDeregister!(ctx));
+          reporter.flush(captured.output);
+        } catch {}
+      },
+      { label: (plugin) => shortName(plugin.name) }
+    );
     throw err;
   }
 

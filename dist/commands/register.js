@@ -4,7 +4,7 @@ import { loadConfig } from "../lib/config.js";
 import { executePlan, flattenPlan, invertPlan, PlanExecutionError, sequence } from "../lib/plan.js";
 import { worktreeRoot, resolveConfigRoot, gitRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
-import { captureLogs, flushCapturedLog, header, step, info, success, error, warn, c } from "../lib/log.js";
+import { captureLogs, header, step, info, success, error, warn, c } from "../lib/log.js";
 function shortName(pluginName) {
     return pluginName.replace(/^wtenv:/, "");
 }
@@ -67,31 +67,33 @@ export async function register(name, opts = {}) {
     console.log();
     let completed = sequence([]);
     try {
-        completed = await executePlan(config.plugins, async (plugin) => {
+        completed = await executePlan(config.plugins, async (plugin, reporter) => {
             if (!plugin.onRegister)
                 return false;
             const captured = await captureLogs(async () => {
-                step(shortName(plugin.name));
+                if (!reporter.managed)
+                    step(shortName(plugin.name));
                 await plugin.onRegister(ctx);
-                console.log();
+                if (!reporter.managed)
+                    console.log();
             });
-            flushCapturedLog(captured.output);
+            reporter.flush(captured.output);
             if (!captured.ok)
                 throw captured.error;
-        });
+        }, { label: (plugin) => shortName(plugin.name) });
     }
     catch (err) {
         const completedPlan = err instanceof PlanExecutionError ? err.completed : completed;
         error("Plugin failed — rolling back...");
-        await executePlan(invertPlan(completedPlan), async (plugin) => {
+        await executePlan(invertPlan(completedPlan), async (plugin, reporter) => {
             if (!plugin.onDeregister)
                 return false;
             try {
                 const captured = await captureLogs(() => plugin.onDeregister(ctx));
-                flushCapturedLog(captured.output);
+                reporter.flush(captured.output);
             }
             catch { }
-        });
+        }, { label: (plugin) => shortName(plugin.name) });
         throw err;
     }
     const envFilePath = join(cwd, opts.envFile ?? ".env.worktree");
