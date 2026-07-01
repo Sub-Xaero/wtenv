@@ -67,6 +67,42 @@ test("executePlan waits for all parallel siblings before reporting failure", asy
   assert.ok(Date.now() - started >= 45);
 });
 
+test("executePlan with a label runs a progress-tracked batch and reports items as managed", async () => {
+  const managedFlags: boolean[] = [];
+
+  const result = await executePlan(
+    parallel(["slow", "fast"]),
+    async (item, reporter) => {
+      managedFlags.push(reporter.managed);
+      if (item === "fast") return;
+      await delay(30);
+    },
+    { label: (item) => item }
+  );
+
+  // Completed items keep original declaration order, not finish order.
+  assert.deepEqual(flattenPlan(result), ["slow", "fast"]);
+  assert.deepEqual(managedFlags, [true, true]);
+});
+
+test("executePlan with a label still surfaces failures for rollback", async () => {
+  await assert.rejects(
+    executePlan(
+      parallel(["slow", "fail"]),
+      async (item) => {
+        if (item === "fail") throw new Error("failed");
+        await delay(30);
+      },
+      { label: (item) => item }
+    ),
+    (err) => {
+      assert.ok(err instanceof PlanExecutionError);
+      assert.deepEqual(flattenPlan(err.completed), ["slow"]);
+      return true;
+    }
+  );
+});
+
 test("invertPlan reverses sequences while preserving parallel groups", () => {
   const plan = sequence([1, parallel([2, sequence([3, 4])]), 5]);
 

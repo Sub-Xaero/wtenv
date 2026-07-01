@@ -5,7 +5,7 @@ import { executePlan, invertPlan } from "../lib/plan.js";
 import { getWorktree, getWorktreePorts, getWorktreeBySlug, listWorktrees } from "../lib/registry.js";
 import { worktreeRoot, resolveConfigRoot, gitRoot, worktreeId } from "../lib/git.js";
 import { detectCaddyConflict } from "../lib/caddy.js";
-import { captureLogs, flushCapturedLog, header, step, info, success, error, warn } from "../lib/log.js";
+import { captureLogs, header, step, info, success, error, warn } from "../lib/log.js";
 function shortName(pluginName) {
     return pluginName.replace(/^wtenv:/, "");
 }
@@ -48,18 +48,20 @@ export async function deregister(name, opts = {}) {
     };
     header(`Deregistering '${worktreeName}' (${wt.slug}.${config.tld})`);
     console.log();
-    await executePlan(invertPlan(config.plugins), async (plugin) => {
+    await executePlan(invertPlan(config.plugins), async (plugin, reporter) => {
         if (!plugin.onDeregister)
             return false;
         const captured = await captureLogs(async () => {
-            step(shortName(plugin.name));
+            if (!reporter.managed)
+                step(shortName(plugin.name));
             await plugin.onDeregister(ctx);
-            console.log();
+            if (!reporter.managed)
+                console.log();
         });
-        flushCapturedLog(captured.output);
+        reporter.flush(captured.output);
         if (!captured.ok)
             throw captured.error;
-    });
+    }, { label: (plugin) => shortName(plugin.name) });
     const envFilePath = join(cwd, opts.envFile ?? ".env.worktree");
     if (existsSync(envFilePath)) {
         unlinkSync(envFilePath);

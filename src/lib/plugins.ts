@@ -8,7 +8,7 @@ import { bareLocalHostnames, registerMdnsHosts, deregisterMdnsHosts } from "./md
 import { provisionDatabase, teardownDatabase } from "./database.js";
 import { provisionRedis, teardownRedis } from "./redis.js";
 import { allocateWorktree, releaseWorktree, allocateRedisDb, releaseRedisDb, getRedisDb } from "./registry.js";
-import { appendCapturedLog, captureLogs, flushCapturedLog, info, cmd, warn } from "./log.js";
+import { appendCapturedLog, captureLogs, info, cmd, warn } from "./log.js";
 import { executePlan, isPlanGroup } from "./plan.js";
 import type { Plugin, PluginContext, DatabaseConfig } from "./config.js";
 import type { PlanInput } from "./plan.js";
@@ -318,9 +318,9 @@ function runCommands(commands: PlanInput<string>, ctx: PluginContext): Promise<v
     return;
   }
 
-  return executePlan(commands, async (command) => {
+  return executePlan(commands, async (command, reporter) => {
     const captured = await captureLogs(() => runCommand(command, ctx, env));
-    flushCapturedLog(captured.output);
+    reporter.flush(captured.output);
     if (!captured.ok) throw captured.error;
   }).then(() => undefined);
 }
