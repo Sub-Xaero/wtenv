@@ -165,9 +165,10 @@ program
   .command("reregister [name]")
   .description("Deregister the current worktree (if registered) then register it again")
   .option("--env-file <filename>", "Env file name to write", ".env.worktree")
-  .action(async (name: string | undefined, opts: { envFile: string }) => {
+  .option("--keep-name", "Preserve the existing DNS slug and default display name, if registered")
+  .action(async (name: string | undefined, opts: { envFile: string; keepName?: boolean }) => {
     try {
-      await reregister(name, { envFile: opts.envFile });
+      await reregister(name, { envFile: opts.envFile, keepName: opts.keepName });
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);

@@ -481,6 +481,10 @@ wtenv deregister [name] [--env-file <filename>]
 wtenv deregister --slug <slug>    # target by slug without being in the directory
 wtenv deregister --stale          # remove all orphaned entries whose worktree no longer exists
 
+# Re-run every deregistration and registration step
+wtenv reregister [name] [--env-file <filename>] [--keep-name]
+wtenv reregister --keep-name     # reuse the provisioned DNS slug; allocate one if unregistered
+
 # Preview what register would do without making changes
 wtenv register --dry-run
 
@@ -534,6 +538,8 @@ wtenv project kill [--force] [--dry-run]
 ```
 
 `name`, `cwd`, and `configRoot` are all derived from git automatically. Pass `name` explicitly only if you need to override.
+
+`reregister --keep-name` preserves the registered DNS slug and display name (unless you pass an explicit `name`). It still runs every cleanup and setup hook and rewrites the env file. On a clean, unregistered worktree, it registers normally and assigns a slug. Without `--keep-name`, `reregister` uses normal name and slug allocation.
 
 ### `wtenv doctor`
 
