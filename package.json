@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "commander": "^15.0.0",
-    "listr2": "^10.2.2"
+    "listr2": "^11.1.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
